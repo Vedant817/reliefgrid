@@ -6,6 +6,7 @@ import { OfferMatrix } from "./components/OfferMatrix";
 import { AllocationInspector } from "./components/AllocationInspector";
 import { AuditReceipt } from "./components/AuditReceipt";
 import { ProviderProof } from "./components/ProviderProof";
+import { DemoRail } from "./components/DemoRail";
 
 export default function App() {
   const incidents = useQuery(api.incidents.listIncidents) ?? [];
@@ -41,8 +42,12 @@ export default function App() {
     api.rfq.listThreadsByNeed,
     activeNeed ? { needId: activeNeed._id } : "skip",
   ) ?? [];
+  const sourceChecks = useQuery(
+    api.sourceChecks.listSourceChecksByNeed,
+    activeNeed ? { needId: activeNeed._id } : "skip",
+  ) ?? [];
 
-  const seedDemo = useMutation(api.seed.seedDemo);
+  const resetDemo = useMutation(api.demo.resetDemo);
   const createIncident = useMutation(api.incidents.createIncident);
   const computeAllocation = useMutation(api.allocations.computeAllocation);
   const approvePlan = useMutation(api.allocations.approvePlan);
@@ -58,12 +63,12 @@ export default function App() {
   const handleSeed = async () => {
     setBusy(true);
     try {
-      const res: any = await seedDemo({});
+      const res = await resetDemo({});
       if (res?.incidentId) setSelectedIncidentId(res.incidentId);
       if (res?.needId) setSelectedNeedId(res.needId);
-      showToast("Demo seeded — 3 synthetic offers + optimal allocation");
+      showToast("Demo reset — canonical scenario restored");
     } catch (e: any) {
-      showToast(e.message ?? "Seed failed");
+      showToast(e.message ?? "Reset failed");
     } finally {
       setBusy(false);
     }
@@ -87,7 +92,7 @@ export default function App() {
       }
       return;
     }
-    showToast("Use Seed Demo to create the canonical 100-filter need");
+    showToast("Use Reset Demo to create the canonical 100-filter need");
   };
 
   const handleRecompute = async () => {
@@ -145,7 +150,7 @@ export default function App() {
               disabled={busy}
               className="px-4 py-2 rounded-full bg-white text-[#0a0e1a] text-sm font-semibold hover:bg-slate-100 disabled:opacity-50"
             >
-              {busy ? "…" : "Seed Demo"}
+              {busy ? "..." : "Reset Demo"}
             </button>
             <button
               onClick={handleCreateNeed}
@@ -197,6 +202,17 @@ export default function App() {
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left: Incident Board */}
         <div className="lg:col-span-3 space-y-4">
+          <DemoRail
+            hasNeed={Boolean(activeNeed)}
+            threadCount={threads.length}
+            offerCount={offers.length}
+            verifiedOfferCount={offers.filter((offer: any) =>
+              sourceChecks.some((check: any) => check.offerId === offer._id && check.status === "verified"),
+            ).length}
+            planStatus={latestPlan?.status}
+            busy={busy}
+            onReset={handleSeed}
+          />
           <IncidentBoard
             incidents={incidents}
             needs={needs}

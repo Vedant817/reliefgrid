@@ -12,7 +12,8 @@ export default defineSchema({
     description: v.optional(v.string()),
   })
     .index("by_status", ["status"])
-    .index("by_deadline", ["deadlineAt"]),
+    .index("by_deadline", ["deadlineAt"])
+    .index("by_title", ["title"]),
 
   needs: defineTable({
     incidentId: v.id("incidents"),
@@ -34,7 +35,7 @@ export default defineSchema({
     region: v.string(),
     verified: v.boolean(),
     createdAt: v.number(),
-  }),
+  }).index("by_email", ["contactEmail"]),
 
   rfqThreads: defineTable({
     needId: v.id("needs"),
