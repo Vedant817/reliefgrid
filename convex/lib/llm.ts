@@ -29,7 +29,7 @@ export function resolveLlmProvider(env: Record<string, string | undefined> = pro
       kind: "groq",
       baseUrl: "https://api.groq.com/openai/v1",
       apiKey: env.GROQ_API_KEY,
-      model: env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
+      model: env.GROQ_MODEL ?? "openai/gpt-oss-120b",
     };
   }
   if (env.OPENAI_API_KEY) {
@@ -103,6 +103,7 @@ export async function chatJson(
   config: LlmConfig,
   prompt: { system: string; user: string },
   timeoutMs = 20000,
+  jsonMode = true,
 ): Promise<{ requestId: string; content: string; latencyMs: number }> {
   if (!config.baseUrl || !config.apiKey) throw new Error("no live LLM configured");
   const startedAt = Date.now();
@@ -115,7 +116,7 @@ export async function chatJson(
         { role: "system", content: prompt.system },
         { role: "user", content: prompt.user },
       ],
-      response_format: { type: "json_object" },
+      ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
       temperature: 0,
     }),
     signal: AbortSignal.timeout(timeoutMs),

@@ -56,12 +56,17 @@ export const draftClarification = action({
     const llm = resolveLlmProvider();
     if (llm.kind !== "mock" && unresolved.length > 0) {
       try {
-        const reply = await chatJson(llm, {
-          system:
-            "You write one short supplier-clarification question for emergency procurement. " +
-            "Ask ONLY about the listed unresolved details, naming each explicitly. Plain text, no greeting, no markdown.",
-          user: `Unresolved offer details: ${unresolved.join(", ")}.`,
-        });
+        const reply = await chatJson(
+          llm,
+          {
+            system:
+              "You write one short supplier-clarification question for emergency procurement. " +
+              "Ask ONLY about the listed unresolved details, naming each explicitly. Plain text, no greeting, no markdown.",
+            user: `Unresolved offer details: ${unresolved.join(", ")}.`,
+          },
+          20000,
+          false,
+        );
         const trimmed = reply.content.trim();
         if (trimmed) {
           question = trimmed;
@@ -69,8 +74,16 @@ export const draftClarification = action({
           recordProvider = llm.kind;
           requestId = reply.requestId;
         }
-      } catch {
+      } catch (e) {
         question = buildQuestion(unresolved);
+        await ctx.runMutation(api.health.recordProviderRun, {
+          provider: llm.kind,
+          operation: "draft_targeted_clarification",
+          status: "failed",
+          latencyMs: Date.now() - startedAt,
+          requestId: String(args.offerId),
+          meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown" }),
+        });
       }
     }
     await ctx.runMutation(api.health.recordProviderRun, {
