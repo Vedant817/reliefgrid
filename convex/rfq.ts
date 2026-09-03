@@ -32,7 +32,7 @@ export const createRfqThreadsForNeed = mutation({
         needId: args.needId,
         supplierId,
         inboxId,
-        threadId: `thread_${id}_${Date.now()}`,
+        threadId: `thread_${args.needId}_${supplierId}_${Date.now()}`,
         status: "pending",
         sentAt: Date.now(),
       });

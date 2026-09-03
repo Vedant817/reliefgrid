@@ -29,11 +29,7 @@ export const verifyOffer = action({
       type: args.type,
     });
 
-    // Update certStatus if cert check passed
-    if (args.type === "cert") {
-      const offer = await ctx.runQuery(api.offers.listAllOffers, {});
-      // find and patch — for MVP, just return
-    }
+    void ctx.runQuery;
 
     return { ok: true, quote, url: args.url };
   },

@@ -17,6 +17,5 @@
     "noFallthroughCasesInSwitch": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "convex"],
-  "references": [{ "path": "./tsconfig.node.json" }]
+  "include": ["src", "convex"]
 }
