@@ -5,6 +5,7 @@ import { IncidentBoard } from "./components/IncidentBoard";
 import { OfferMatrix } from "./components/OfferMatrix";
 import { AllocationInspector } from "./components/AllocationInspector";
 import { AuditReceipt } from "./components/AuditReceipt";
+import { ProviderProof } from "./components/ProviderProof";
 
 export default function App() {
   const incidents = useQuery(api.incidents.listIncidents) ?? [];
@@ -230,6 +231,7 @@ export default function App() {
         <div className="lg:col-span-4 space-y-4">
           <AllocationInspector plan={latestPlan} need={activeNeed} offers={offers} />
           <AuditReceipt need={activeNeed} plan={latestPlan} />
+          <ProviderProof />
         </div>
       </div>
 

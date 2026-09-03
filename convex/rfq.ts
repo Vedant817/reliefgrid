@@ -65,6 +65,16 @@ export const createRfqThreadsForNeed = mutation({
       }
     }
 
+    await ctx.db.insert("providerRuns", {
+      provider: "agentmail",
+      operation: "create_rfq_threads",
+      status: "mock",
+      latencyMs: 0,
+      requestId: String(args.needId),
+      at: Date.now(),
+      meta: JSON.stringify({ suppliers: args.supplierIds.length }),
+    });
+
     return threads;
   },
 });

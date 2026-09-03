@@ -12,6 +12,7 @@ export const verifyOffer = action({
     url: v.string(),
   },
   handler: async (ctx, args): Promise<any> => {
+    const startedAt = Date.now();
     // Simulate Firecrawl result
     const quotes: Record<string, string> = {
       cert: "NSF/ANSI 53 certified — see manufacturer spec sheet page 2",
@@ -28,8 +29,13 @@ export const verifyOffer = action({
       reason: `Firecrawl verification passed for ${args.type}`,
       type: args.type,
     });
-
-    void ctx.runQuery;
+    await ctx.runMutation(api.health.recordProviderRun, {
+      provider: "firecrawl",
+      operation: `verify_${args.type}`,
+      status: "mock",
+      latencyMs: Date.now() - startedAt,
+      requestId: String(args.offerId),
+    });
 
     return { ok: true, quote, url: args.url };
   },
@@ -38,6 +44,7 @@ export const verifyOffer = action({
 export const verifyNeedSources = action({
   args: { needId: v.id("needs") },
   handler: async (ctx, args): Promise<any> => {
+    const startedAt = Date.now();
     const offers: any = await ctx.runQuery(api.offers.listOffersByNeed, { needId: args.needId });
     for (const o of offers) {
       await ctx.runMutation(api.sourceChecks.addSourceCheck, {
@@ -57,6 +64,14 @@ export const verifyNeedSources = action({
         type: "recall",
       });
     }
+    await ctx.runMutation(api.health.recordProviderRun, {
+      provider: "firecrawl",
+      operation: "verify_need_sources",
+      status: "mock",
+      latencyMs: Date.now() - startedAt,
+      requestId: String(args.needId),
+      meta: JSON.stringify({ offers: offers.length }),
+    });
     return { verified: offers.length };
   },
 });

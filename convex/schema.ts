@@ -139,4 +139,37 @@ export default defineSchema({
     email: v.string(),
     createdAt: v.number(),
   }).index("by_need", ["needId"]),
+
+  // Provider execution ledger — safe proof only, never secrets or message bodies
+  providerRuns: defineTable({
+    provider: v.union(
+      v.literal("convex"),
+      v.literal("openai"),
+      v.literal("firecrawl"),
+      v.literal("agentmail"),
+    ),
+    operation: v.string(), // e.g. extract, scrape, send_rfq, webhook
+    status: v.union(
+      v.literal("live"),
+      v.literal("mock"),
+      v.literal("degraded"),
+      v.literal("not_configured"),
+      v.literal("failed"),
+    ),
+    latencyMs: v.optional(v.number()),
+    requestId: v.optional(v.string()),
+    at: v.number(),
+    meta: v.optional(v.string()),
+  })
+    .index("by_provider", ["provider"])
+    .index("by_at", ["at"]),
+
+  // Controlled demo bulletin for Evidence Drift (11.2) — public, synthetic
+  demoBulletins: defineTable({
+    key: v.string(),
+    title: v.string(),
+    state: v.union(v.literal("CLEAR"), v.literal("RECALL_ACTIVE")),
+    body: v.string(),
+    updatedAt: v.number(),
+  }).index("by_key", ["key"]),
 });

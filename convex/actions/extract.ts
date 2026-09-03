@@ -14,6 +14,7 @@ export const extractOfferFromEmail = action({
     rawEmailId: v.string(),
   },
   handler: async (ctx, args): Promise<any> => {
+    const startedAt = Date.now();
     const text = args.rawBody.toLowerCase();
 
     // Deterministic extraction rules for MVP (replace with OpenAI call)
@@ -70,6 +71,15 @@ export const extractOfferFromEmail = action({
     } catch (e) {
       console.error(e);
     }
+
+    await ctx.runMutation(api.health.recordProviderRun, {
+      provider: "openai",
+      operation: "extract_offer",
+      status: "mock",
+      latencyMs: Date.now() - startedAt,
+      requestId: args.rawEmailId,
+      meta: JSON.stringify({ language, confidence }),
+    });
 
     return { qty, unitPriceCents, arrivalAt, certStatus, language, confidence, conditions };
   },
