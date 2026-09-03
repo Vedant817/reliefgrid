@@ -1,6 +1,38 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
+
+export const getThreadForSend = internalQuery({
+  args: { threadId: v.id("rfqThreads") },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread) return null;
+    return {
+      ...thread,
+      need: await ctx.db.get(thread.needId),
+      supplier: await ctx.db.get(thread.supplierId),
+    };
+  },
+});
+
+export const recordAgentMailSend = internalMutation({
+  args: {
+    threadId: v.id("rfqThreads"),
+    agentmailThreadId: v.string(),
+    agentmailMessageId: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.threadId, {
+      status: "sent",
+      sentAt: Date.now(),
+      agentmailThreadId: args.agentmailThreadId,
+      agentmailMessageId: args.agentmailMessageId,
+    });
+    return null;
+  },
+});
 
 export const createRfqThreadsForNeed = mutation({
   args: {

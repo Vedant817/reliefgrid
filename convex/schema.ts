@@ -59,6 +59,8 @@ export default defineSchema({
     status: v.string(), // pending, sent, replied, awarded, rejected
     sentAt: v.optional(v.number()),
     lastReplyAt: v.optional(v.number()),
+    agentmailThreadId: v.optional(v.string()),
+    agentmailMessageId: v.optional(v.string()),
   }).index("by_need", ["needId"]),
 
   offers: defineTable({
