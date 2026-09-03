@@ -335,9 +335,9 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.1.3 | Create one real AgentMail inbox per Need | Inbox ID stored in Convex; address never printed to `hackathon.md` or public audit | `convex/lib/agentmail.ts` | [ ] |
 | 11.1.4 | Prove send -> reply -> signed webhook -> offer version | Controlled inbox receives RFQ; reply creates exactly one offer version; duplicate webhook remains idempotent | `convex/http.ts`, `convex/actions/sendRfq.ts` | [ ] |
 | 11.1.5 | Add provider execution ledger | UI shows safe status, latency, timestamp, and provider request ID for OpenAI/Firecrawl/AgentMail; never secrets/content | `convex/schema.ts`, `src/components/ProviderProof.tsx` | [x] |
-| 11.1.6 | Add free Groq live lane with mock fallback | Groq key present routes extraction + clarification through Llama with JSON schema; failures and missing keys degrade to mock, ledger records live vs mock | `convex/lib/llm.ts`, `convex/actions/extract.ts`, `convex/actions/clarify.ts`, `convex/health.ts` | [x] |
-| 11.1.7 | Add live AgentMail RFQ send lane | Real send through scoped inbox with thread/message IDs stored on rfqThreads; idempotent re-send; ledger records live | `convex/lib/agentmail.ts`, `convex/actions/sendRfq.ts`, `convex/rfq.ts` | [x] |
-| 11.1.8 | Add Firecrawl live scrape lane with mock fallback | Real v1 scrape stores title + excerpt as source-check quote; provider errors (incl. 402) record failed runs and degrade to mock | `convex/lib/firecrawl.ts`, `convex/actions/verify.ts` | [x] |
+| 11.1.6 | Add free Groq live-only lane | Extraction + clarification require a live model; failures throw after recording failed runs; ambiguous mail still abstains via nulls | `convex/lib/llm.ts`, `convex/actions/extract.ts`, `convex/actions/clarify.ts`, `convex/health.ts` | [x] |
+| 11.1.7 | Add live AgentMail RFQ + clarification send lane | Real sends through scoped inbox with thread/message IDs stored; idempotent RFQ re-send; approval-gated clarification send; ledger records live | `convex/lib/agentmail.ts`, `convex/actions/sendRfq.ts`, `convex/actions/clarify.ts`, `convex/rfq.ts` | [x] |
+| 11.1.8 | Add Firecrawl live-only scrape lane | Real v1 scrape stores title + excerpt as source-check quote; missing keys and provider errors throw after recording failed runs | `convex/lib/firecrawl.ts`, `convex/actions/verify.ts` | [x] |
 
 ### 11.2 Evidence Drift / Source Flip [0/5] — hero feature
 

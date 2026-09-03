@@ -111,7 +111,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                     <div className="mt-2">
                       <p className="text-xs text-slate-300">{drafts[o._id]}</p>
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="text-[10px] mono text-slate-500">LLM: {draftStatus[o._id] ?? "mock"}</span>
+                        <span className="text-[10px] mono text-slate-500">LLM: {draftStatus[o._id] ?? "live"}</span>
                         <button
                           disabled={sent[o._id]}
                           onClick={async () => {
@@ -120,7 +120,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                           }}
                           className="px-3 py-1.5 rounded-full border border-amber-300/30 text-amber-200 text-xs disabled:opacity-50"
                         >
-                          {sent[o._id] ? "Approved · mock sent" : "Approve & mock send"}
+                          {sent[o._id] ? "Approved · sent" : "Approve & send"}
                         </button>
                       </div>
                     </div>
