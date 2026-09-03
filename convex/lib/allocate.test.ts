@@ -28,4 +28,12 @@ describe("allocateOffers abstention", () => {
     expect(result.totalQty).toBe(10);
     expect(result.selected).toHaveLength(1);
   });
+
+  it("evaluates overrides without mutating its inputs", () => {
+    const late = offer({ arrivalAt: need.deadlineAt + 16 * 3600000, unitPriceCents: 300 });
+    const original = JSON.stringify(late);
+    expect(allocateOffers([late], need).selected).toHaveLength(0);
+    expect(allocateOffers([late], { ...need, deadlineAt: need.deadlineAt + 16 * 3600000 }).selected).toHaveLength(1);
+    expect(JSON.stringify(late)).toBe(original);
+  });
 });

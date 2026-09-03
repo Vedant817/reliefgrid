@@ -9,6 +9,7 @@ import { ProviderProof } from "./components/ProviderProof";
 import { DemoRail } from "./components/DemoRail";
 import { EvidenceDrift } from "./components/EvidenceDrift";
 import { DemoBulletin } from "./pages/DemoBulletin";
+import { CounterfactualLab } from "./components/CounterfactualLab";
 
 export default function App() {
   const incidents = useQuery(api.incidents.listIncidents) ?? [];
@@ -256,6 +257,7 @@ export default function App() {
         <div className="lg:col-span-4 space-y-4">
           <AllocationInspector plan={latestPlan} need={activeNeed} offers={offers} />
           <AuditReceipt need={activeNeed} plan={latestPlan} />
+          <CounterfactualLab needId={activeNeed?._id} />
           <ProviderProof />
         </div>
       </div>
