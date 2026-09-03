@@ -32,7 +32,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
         <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
           <div className="rounded-xl bg-[#1a2332] border border-[#1e2d4a] p-3">Apex 70 × $11 — 4 PM · EN</div>
           <div className="rounded-xl bg-[#1a2332] border border-[#1e2d4a] p-3">BlueRiver 100 × $9 — tomorrow · late</div>
-          <div className="rounded-xl bg-[#1a2332] border border-[#1e2d4a] p-3">Casa 40 × $10 — 5 PM · ES</div>
+          <div className="rounded-xl bg-[#1a2332] border border-[#1e2d4a] p-3">Casa 30 × $10 — 5 PM · ES</div>
         </div>
       </div>
     );

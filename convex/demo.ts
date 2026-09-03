@@ -108,7 +108,7 @@ export async function resetDemoData(ctx: MutationCtx) {
   const offerFixtures = [
     { qty: 70, unitPriceCents: 1100, arrivalAt: now + 2 * 3600000, language: "en", confidence: 0.97, body: "We can deliver 70 filters at $11 each by 4 PM. Certified NSF/ANSI 53." },
     { qty: 100, unitPriceCents: 900, arrivalAt: now + 20 * 3600000, language: "en", confidence: 0.95, body: "We have 100 filters at $9 each, delivery tomorrow morning." },
-    { qty: 40, unitPriceCents: 1000, arrivalAt: now + 3 * 3600000, language: "es", confidence: 0.96, body: "Podemos entregar 40 unidades certificadas a $10 cada una antes de las 5 PM." },
+    { qty: 30, unitPriceCents: 1000, arrivalAt: now + 3 * 3600000, language: "es", confidence: 0.96, body: "Podemos entregar 30 unidades certificadas a $10 cada una antes de las 5 PM." },
   ] as const;
 
   const offers = [];

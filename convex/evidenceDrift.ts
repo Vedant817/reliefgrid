@@ -131,10 +131,10 @@ export const activateRecall = mutation({
         need: { id: String(need._id), item: need.item, qty: need.qty },
         offers: [
           { supplier: "Apex Medical Supply", qty: offer.qty, certStatus: "failed" },
-          { supplier: "Casa Suministros", qty: 40, certStatus: "verified" },
+          { supplier: "Casa Suministros", qty: 30, certStatus: "verified" },
         ],
         plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: ["Casa Suministros"] },
-        causalDiff: "Source recall removed Apex; plan coverage changed 100 -> 40",
+        causalDiff: "Source recall removed Apex; plan coverage changed 100 -> 30",
       }),
     });
     return result;
@@ -157,7 +157,7 @@ export const addReplacementOffer = mutation({
     const replacement = current.find((offer) => offer.supplierId === supplier!._id);
     if (!replacement) {
       const offerId = await ctx.db.insert("offers", {
-        needId: need._id, supplierId: supplier._id, qty: 60, unitPriceCents: 1200,
+        needId: need._id, supplierId: supplier._id, qty: 70, unitPriceCents: 1200,
         arrivalAt: Date.now() + 2 * 3600000, certStatus: "verified", conditions: [], confidence: 0.98,
         rawEmailId: "demo-replacement", language: "en", status: "active", updatedAt: Date.now(),
       });
@@ -174,11 +174,11 @@ export const addReplacementOffer = mutation({
         need: { id: String(need._id), item: need.item, qty: need.qty },
         offers: [
           { supplier: "Apex Medical Supply", qty: 70, certStatus: "failed" },
-          { supplier: "Casa Suministros", qty: 40, certStatus: "verified" },
-          { supplier: "Delta Emergency Stock", qty: 60, certStatus: "verified" },
+          { supplier: "Casa Suministros", qty: 30, certStatus: "verified" },
+          { supplier: "Delta Emergency Stock", qty: 70, certStatus: "verified" },
         ],
         plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: ["Casa Suministros", "Delta Emergency Stock"] },
-        causalDiff: "Replacement stock restored plan coverage 40 -> 100",
+        causalDiff: "Replacement stock restored plan coverage 30 -> 100",
       }),
     });
     return result;

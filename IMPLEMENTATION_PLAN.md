@@ -4,7 +4,7 @@
 **Event:** Convex All Gas Hackathon (sponsored by OpenAI, Firecrawl, AgentMail)  
 **Repo:** `convex-all-gas` (`C:\Users\vedan\Documents\Resources\Code\convex-all-gas`)  
 **Frontend choice:** `convex.site` via `@convex-dev/static-hosting`  
-**Status:** MVP scaffold in progress; local backend and UI compile, but real sponsor APIs, cloud deployment, automated tests, and browser verification are still pending
+**Status:** Cloud development backend linked; UI build and allocator tests pass. Real sponsor APIs, static hosting/public deployment, and browser verification are still pending.
 **How to use:** Agents update the checkbox (`[ ]` → `[x]`) and `Status` column, never rewrite history. Keep `hackathon.md` in sync via `/hackathon` after each phase.
 
 ---
@@ -292,23 +292,25 @@ This section overrides optimistic checkbox interpretations. A sponsor integratio
 - [x] CRUD, versioned offers, source-check storage, allocation persistence, approval, audit queries, seed data, and HTTP routes compile.
 - [x] Four-screen UI exists: Incident Board, Live Offer Matrix, Allocation Inspector, Public Audit Receipt.
 - [x] `npx tsc --noEmit` passes.
-- [x] `npx vite build` passes (110 modules; production bundle generated).
+- [x] `npm run build` passes (116 modules; production bundle generated).
 
 ### Not verified and must not be claimed as complete
 
 - [ ] **OpenAI is currently a deterministic extraction mock.** No real OpenAI or Convex AI Gateway response has been proven.
 - [ ] **Firecrawl is currently a verification mock.** No real Firecrawl scrape/monitor response has been proven.
 - [ ] **AgentMail is currently synthetic thread/webhook scaffolding.** No real inbox, send, reply, signature verification, or webhook round trip has been proven.
-- [ ] Convex is local anonymous only; no linked cloud project or production deployment is proven.
+- [x] Convex cloud development deployment `judicious-rat-761` is linked and backend functions are verified.
+- [ ] Convex production deployment is not yet proven.
 - [ ] Static hosting is not installed; no public `.convex.site` URL exists.
-- [ ] Allocator unit tests and Convex integration tests do not exist yet.
+- [x] Allocator unit tests exist and pass (3 tests); replay snapshot normalization test passes.
+- [ ] Convex integration tests do not exist yet.
 - [ ] Browser/Playwright realtime proof does not exist yet.
 - [ ] Public GitHub remote, public video, social post, and VibeApps submission do not exist yet.
 - [ ] `hackathon.md` does not yet describe the implemented product and must be refreshed after verification.
 
 ---
 
-## 12) Wow layer — prioritized, concrete, and demoable [0/32]
+## 12) Wow layer — prioritized, concrete, and demoable [12/32]
 
 The features below are not generic extras. Each creates a visible cause-and-effect moment using the sponsor stack. Do not start Tier B until all real sponsor cutover tasks in 11.1 pass.
 
@@ -324,7 +326,7 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | B2 | Counterfactual Lab | Explains why cheapest did not win without changing live state | Ship if A tiers are stable |
 | B3 | Live coordinator presence | Shows collaboration, but adds less product value than evidence drift | Optional |
 
-### 11.1 Real sponsor cutover [0/5]
+### 11.1 Real sponsor cutover [1/5]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
@@ -332,7 +334,7 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.1.2 | Replace source-check mock with Firecrawl scrape | Real public page returns URL, title, relevant quote, retrieval time, and provider job/request ID | `convex/actions/verify.ts` | [ ] |
 | 11.1.3 | Create one real AgentMail inbox per Need | Inbox ID stored in Convex; address never printed to `hackathon.md` or public audit | `convex/lib/agentmail.ts` | [ ] |
 | 11.1.4 | Prove send -> reply -> signed webhook -> offer version | Controlled inbox receives RFQ; reply creates exactly one offer version; duplicate webhook remains idempotent | `convex/http.ts`, `convex/actions/sendRfq.ts` | [ ] |
-| 11.1.5 | Add provider execution ledger | UI shows safe status, latency, timestamp, and provider request ID for OpenAI/Firecrawl/AgentMail; never secrets/content | `convex/schema.ts`, `src/components/ProviderProof.tsx` | [ ] |
+| 11.1.5 | Add provider execution ledger | UI shows safe status, latency, timestamp, and provider request ID for OpenAI/Firecrawl/AgentMail; never secrets/content | `convex/schema.ts`, `src/components/ProviderProof.tsx` | [x] |
 
 ### 11.2 Evidence Drift / Source Flip [0/5] — hero feature
 
@@ -346,43 +348,43 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.2.4 | Stream recovery to every client | Two browser sessions show `100/100 -> 30/100 shortfall -> replacement plan` without refresh or polling | `src/components/IncidentBoard.tsx` | [ ] |
 | 11.2.5 | Draft hold notice through AgentMail | Human sees cited reason and approves before send; no autonomous purchasing or cancellation | `convex/actions/awards.ts`, `src/components/HoldNotice.tsx` | [ ] |
 
-### 11.3 AI abstention + targeted clarification [0/4]
+### 11.3 AI abstention + targeted clarification [2/4]
 
 **Demo input:** `We should be able to do around fifty, maybe near five.` The system must not convert this into a trusted offer.
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
-| 11.3.1 | Add field-level confidence and evidence spans | Quantity, price, arrival, and cert each include confidence + source text offsets | `convex/lib/extractOffer.ts`, schema | [ ] |
-| 11.3.2 | Block ambiguous offers from allocator | Missing price/deadline/cert or confidence below threshold yields `needs_review`, never eligible | `convex/lib/allocate.ts` | [ ] |
+| 11.3.1 | Add field-level confidence and evidence spans | Quantity, price, arrival, and cert each include confidence + source text offsets | `convex/lib/extractOffer.ts`, schema | [x] |
+| 11.3.2 | Block ambiguous offers from allocator | Missing price/deadline/cert or confidence below threshold yields `needs_review`, never eligible | `convex/lib/allocate.ts` | [x] |
 | 11.3.3 | Generate one precise clarification | OpenAI asks only unresolved fields (e.g. exact qty and arrival date), not a generic follow-up | `convex/actions/clarify.ts` | [ ] |
 | 11.3.4 | Send clarification after approval and merge reply | AgentMail thread reply creates a new version; old version remains replayable | `convex/actions/sendClarification.ts` | [ ] |
 
-### 11.4 Judge Mode [0/4]
+### 11.4 Judge Mode [3/4]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
-| 11.4.1 | Add idempotent `Reset Demo` | One click deletes only synthetic demo records and recreates a known clean scenario | `convex/demo.ts` | [ ] |
-| 11.4.2 | Add guided five-step demo rail | `Create need -> send RFQs -> replies -> verify -> approve` highlights next valid action, never fakes completion | `src/components/DemoRail.tsx` | [ ] |
-| 11.4.3 | Add integration health panel | Convex/OpenAI/Firecrawl/AgentMail show `live`, `mock`, `degraded`, or `not configured` from backend checks | `src/components/ProviderProof.tsx`, `convex/health.ts` | [ ] |
+| 11.4.1 | Add idempotent `Reset Demo` | One click deletes only synthetic demo records and recreates a known clean scenario | `convex/demo.ts` | [x] |
+| 11.4.2 | Add guided five-step demo rail | `Create need -> send RFQs -> replies -> verify -> approve` highlights next valid action, never fakes completion | `src/components/DemoRail.tsx` | [x] |
+| 11.4.3 | Add integration health panel | Convex/OpenAI/Firecrawl/AgentMail show `live`, `mock`, `degraded`, or `not configured` from backend checks | `src/components/ProviderProof.tsx`, `convex/health.ts` | [x] |
 | 11.4.4 | Add safe fallback fixtures | If a provider is unavailable, judges can view labeled recorded fixtures, but live proof remains visibly distinct | `fixtures/`, `src/components/DemoRail.tsx` | [ ] |
 
-### 11.5 Decision Time Machine [0/5]
+### 11.5 Decision Time Machine [3/5]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
 | 11.5.1 | Make audit payloads versioned and append-only | Every offer/source/plan/status change references previous and next version IDs | `convex/schema.ts`, `convex/lib/audit.ts` | [ ] |
-| 11.5.2 | Build `getIncidentAt(eventId)` reconstruction query | Query returns deterministic historical state from audit events | `convex/replay.ts` | [ ] |
-| 11.5.3 | Add timeline slider | Scrubbing shows offers and selected suppliers at each event | `src/components/DecisionReplay.tsx` | [ ] |
-| 11.5.4 | Highlight causal diff | UI states `Source recall removed Apex; plan coverage changed 100 -> 30` | `src/components/DecisionReplay.tsx` | [ ] |
+| 11.5.2 | Build `getIncidentAt(eventId)` reconstruction query | Query returns deterministic historical state from audit events | `convex/replay.ts` | [x] |
+| 11.5.3 | Add timeline slider | Scrubbing shows offers and selected suppliers at each event | `src/components/DecisionReplay.tsx` | [x] |
+| 11.5.4 | Highlight causal diff | UI states `Source recall removed Apex; plan coverage changed 100 -> 30` | `src/components/DecisionReplay.tsx` | [x] |
 | 11.5.5 | Test replay determinism | Same event ID reconstructs byte-equivalent normalized state twice | `convex/replay.test.ts` | [ ] |
 
-### 11.6 Counterfactual Lab [0/4]
+### 11.6 Counterfactual Lab [3/4]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
-| 11.6.1 | Extract allocator into pure function with constraint overrides | Override deadline/budget/cert without database writes | `convex/lib/allocate.ts` | [ ] |
-| 11.6.2 | Add `Why not this supplier?` action | Clicking BlueRiver shows exact failed constraint: delivery after deadline | `src/components/AllocationInspector.tsx` | [ ] |
-| 11.6.3 | Add non-mutating what-if controls | Relax deadline by 16h -> BlueRiver wins and savings display; live plan remains unchanged | `src/components/CounterfactualLab.tsx` | [ ] |
+| 11.6.1 | Extract allocator into pure function with constraint overrides | Override deadline/budget/cert without database writes | `convex/lib/allocate.ts` | [x] |
+| 11.6.2 | Add `Why not this supplier?` action | Clicking BlueRiver shows exact failed constraint: delivery after deadline | `src/components/AllocationInspector.tsx` | [x] |
+| 11.6.3 | Add non-mutating what-if controls | Relax deadline by 16h -> BlueRiver wins and savings display; live plan remains unchanged | `src/components/CounterfactualLab.tsx` | [x] |
 | 11.6.4 | Test zero side effects | Counterfactual query leaves plans, approvals, threads, and audit count unchanged | `convex/allocate.test.ts` | [ ] |
 
 ### 11.7 Realtime collaboration presence [0/5] — optional

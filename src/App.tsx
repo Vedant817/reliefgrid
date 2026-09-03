@@ -245,7 +245,7 @@ export default function App() {
                 Simulate shortfall → new plan
               </button>
             </div>
-            <div className="mt-3 text-[11px] leading-relaxed text-slate-500">Seed creates 3 synthetic offers: Apex 70 (EN), BlueRiver 100 late, Casa 40 (ES). Allocation picks 70+30. Approve to send awards. Real AgentMail + Firecrawl wired via env keys in production.</div>
+            <div className="mt-3 text-[11px] leading-relaxed text-slate-500">Reset creates 3 synthetic offers: Apex 70 (EN), BlueRiver 100 late, Casa 30 (ES). Allocation picks 70+30. Approve to send awards. Real AgentMail and Firecrawl cutover remains pending.</div>
           </div>
         </div>
 
