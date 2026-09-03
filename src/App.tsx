@@ -10,6 +10,7 @@ import { DemoRail } from "./components/DemoRail";
 import { EvidenceDrift } from "./components/EvidenceDrift";
 import { DemoBulletin } from "./pages/DemoBulletin";
 import { CounterfactualLab } from "./components/CounterfactualLab";
+import { DecisionReplay } from "./components/DecisionReplay";
 
 export default function App() {
   const incidents = useQuery(api.incidents.listIncidents) ?? [];
@@ -260,6 +261,10 @@ export default function App() {
           <CounterfactualLab needId={activeNeed?._id} />
           <ProviderProof />
         </div>
+      </div>
+
+      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 pb-4">
+        <DecisionReplay incidentId={activeIncident?._id} />
       </div>
 
       {/* Footer proof */}

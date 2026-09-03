@@ -71,6 +71,7 @@ export default defineSchema({
     conditions: v.array(v.string()),
     confidence: v.number(),
     fieldEvidence: v.optional(fieldEvidence),
+    currentVersionId: v.optional(v.id("offerVersions")),
     rawEmailId: v.optional(v.string()),
     language: v.optional(v.string()),
     status: v.string(), // active, superseded
@@ -88,6 +89,7 @@ export default defineSchema({
     conditions: v.array(v.string()),
     confidence: v.number(),
     fieldEvidence: v.optional(fieldEvidence),
+    previousVersionId: v.optional(v.id("offerVersions")),
     rawEmailId: v.string(),
     rawBody: v.string(),
     language: v.string(),
@@ -145,9 +147,14 @@ export default defineSchema({
     actor: v.string(),
     at: v.number(),
     meta: v.optional(v.string()),
+    incidentId: v.optional(v.id("incidents")),
+    eventVersion: v.optional(v.number()),
+    previousEventId: v.optional(v.id("auditEvents")),
+    snapshot: v.optional(v.string()),
   })
     .index("by_entity", ["entity", "entityId"])
-    .index("by_at", ["at"]),
+    .index("by_at", ["at"])
+    .index("by_incident_at", ["incidentId", "at"]),
 
   // Helper for inbox simulation / agentmail mapping
   inboxes: defineTable({

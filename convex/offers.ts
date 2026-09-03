@@ -21,6 +21,12 @@ export const upsertOfferVersion = mutation({
     language: v.string(),
   },
   handler: async (ctx, args) => {
+    const existingOffer = await ctx.db
+      .query("offers")
+      .withIndex("by_need", (q) => q.eq("needId", args.needId))
+      .collect()
+      .then((offers) => offers.find((o) => o.supplierId === args.supplierId));
+
     // Create version
     const versionId = await ctx.db.insert("offerVersions", {
       needId: args.needId,
@@ -32,18 +38,12 @@ export const upsertOfferVersion = mutation({
       conditions: args.conditions,
       confidence: args.confidence,
       fieldEvidence: args.fieldEvidence,
+      previousVersionId: existingOffer?.currentVersionId,
       rawEmailId: args.rawEmailId,
       rawBody: args.rawBody,
       language: args.language,
       createdAt: Date.now(),
     });
-
-    // Upsert current offer
-    const existingOffer = await ctx.db
-      .query("offers")
-      .withIndex("by_need", (q) => q.eq("needId", args.needId))
-      .collect()
-      .then((offers) => offers.find((o) => o.supplierId === args.supplierId));
 
     if (existingOffer) {
       await ctx.db.patch(existingOffer._id, {
@@ -54,6 +54,7 @@ export const upsertOfferVersion = mutation({
         conditions: args.conditions,
         confidence: args.confidence,
         fieldEvidence: args.fieldEvidence,
+        currentVersionId: versionId,
         rawEmailId: args.rawEmailId,
         language: args.language,
         updatedAt: Date.now(),
@@ -81,6 +82,7 @@ export const upsertOfferVersion = mutation({
         conditions: args.conditions,
         confidence: args.confidence,
         fieldEvidence: args.fieldEvidence,
+        currentVersionId: versionId,
         rawEmailId: args.rawEmailId,
         language: args.language,
         status: "active",

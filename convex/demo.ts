@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, type MutationCtx } from "./_generated/server";
 import { allocateOffers } from "./lib/allocate";
+import { writeAudit } from "./lib/audit";
 
 const DEMO_TITLE = "Flood Shelter - North District";
 const LEGACY_DEMO_TITLE = "Flood Shelter — North District";
@@ -124,12 +125,13 @@ export async function resetDemoData(ctx: MutationCtx) {
       confidence: fixture.confidence, rawEmailId: `demo-email-${index}`,
       language: fixture.language, status: "active", updatedAt: now,
     });
-    await ctx.db.insert("offerVersions", {
+    const versionId = await ctx.db.insert("offerVersions", {
       offerId, needId, supplierId, qty: fixture.qty, unitPriceCents: fixture.unitPriceCents,
       arrivalAt: fixture.arrivalAt, certStatus: "verified", conditions: [],
       confidence: fixture.confidence, rawEmailId: `demo-email-${index}`,
       rawBody: fixture.body, language: fixture.language, createdAt: now,
     });
+    await ctx.db.patch(offerId, { currentVersionId: versionId });
     await ctx.db.insert("sourceChecks", {
       offerId, url: "https://example.com/demo/filter-nsf53", quote: "NSF/ANSI 53 certification confirmed",
       retrievedAt: now, status: "verified", reason: "Labeled synthetic verification fixture", type: "cert",
@@ -157,6 +159,24 @@ export async function resetDemoData(ctx: MutationCtx) {
   const bulletinValue = { title: "Northstar Filter Model NF-53 Safety Bulletin", state: "CLEAR" as const, body: "No active safety notices for model NF-53.", updatedAt: now };
   if (bulletin) await ctx.db.patch(bulletin._id, bulletinValue);
   else await ctx.db.insert("demoBulletins", { key: "filter-nsf53", ...bulletinValue });
+
+  const snapshotBase = { incident: { id: String(incidentId), title: DEMO_TITLE }, need: { id: String(needId), item: "Portable water filters (NSF/ANSI 53)", qty: 100 } };
+  await writeAudit(ctx, {
+    entity: "incidents", entityId: incidentId, action: "demo_need_created", actor: "judge-mode", incidentId,
+    snapshot: JSON.stringify({ ...snapshotBase, offers: [], plan: null }),
+  });
+  await writeAudit(ctx, {
+    entity: "incidents", entityId: incidentId, action: "demo_replies_received", actor: "judge-mode", incidentId,
+    snapshot: JSON.stringify({ ...snapshotBase, offers: offers.map((offer) => ({ supplier: offer.supplierName, qty: offer.qty, certStatus: "needs_review" })), plan: null }),
+  });
+  await writeAudit(ctx, {
+    entity: "incidents", entityId: incidentId, action: "demo_sources_verified", actor: "judge-mode", incidentId,
+    snapshot: JSON.stringify({ ...snapshotBase, offers: offers.map((offer) => ({ supplier: offer.supplierName, qty: offer.qty, certStatus: "verified" })), plan: null }),
+  });
+  await writeAudit(ctx, {
+    entity: "incidents", entityId: incidentId, action: "demo_plan_proposed", actor: "allocator", incidentId,
+    snapshot: JSON.stringify({ ...snapshotBase, offers: offers.map((offer) => ({ supplier: offer.supplierName, qty: offer.qty, certStatus: "verified" })), plan: { id: String(planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: result.selected.map((offer) => offer.supplierName) } }),
+  });
 
   return { incidentId, needId, planId };
 }

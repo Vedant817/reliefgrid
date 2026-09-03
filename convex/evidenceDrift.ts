@@ -118,14 +118,26 @@ export const activateRecall = mutation({
       at: Date.now(),
       meta: JSON.stringify({ state: "RECALL_ACTIVE", citationUrl }),
     });
+    const result = await recompute(ctx, need._id);
     await writeAudit(ctx, {
       entity: "offers",
       entityId: offer._id,
       action: "invalidated_by_recall",
       actor: "evidence-monitor",
       meta: JSON.stringify({ citationUrl, previousCertStatus: "verified", nextCertStatus: "failed" }),
+      incidentId: need.incidentId,
+      snapshot: JSON.stringify({
+        incident: { id: String(need.incidentId), title: DEMO_TITLE },
+        need: { id: String(need._id), item: need.item, qty: need.qty },
+        offers: [
+          { supplier: "Apex Medical Supply", qty: offer.qty, certStatus: "failed" },
+          { supplier: "Casa Suministros", qty: 40, certStatus: "verified" },
+        ],
+        plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: ["Casa Suministros"] },
+        causalDiff: "Source recall removed Apex; plan coverage changed 100 -> 40",
+      }),
     });
-    return await recompute(ctx, need._id);
+    return result;
   },
 });
 
@@ -154,7 +166,22 @@ export const addReplacementOffer = mutation({
         retrievedAt: Date.now(), status: "verified", reason: "Labeled synthetic replacement fixture", type: "recall",
       });
     }
-    return await recompute(ctx, need._id);
+    const result = await recompute(ctx, need._id);
+    await writeAudit(ctx, {
+      entity: "incidents", entityId: need.incidentId, action: "replacement_plan_proposed", actor: "allocator", incidentId: need.incidentId,
+      snapshot: JSON.stringify({
+        incident: { id: String(need.incidentId), title: DEMO_TITLE },
+        need: { id: String(need._id), item: need.item, qty: need.qty },
+        offers: [
+          { supplier: "Apex Medical Supply", qty: 70, certStatus: "failed" },
+          { supplier: "Casa Suministros", qty: 40, certStatus: "verified" },
+          { supplier: "Delta Emergency Stock", qty: 60, certStatus: "verified" },
+        ],
+        plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: ["Casa Suministros", "Delta Emergency Stock"] },
+        causalDiff: "Replacement stock restored plan coverage 40 -> 100",
+      }),
+    });
+    return result;
   },
 });
 
