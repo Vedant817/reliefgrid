@@ -1,0 +1,15 @@
+{
+  "label": "RECORDED FIXTURE — not live proof",
+  "scenario": "Flood Shelter - North District / 100 portable water filters (NSF/ANSI 53)",
+  "recordedAt": "2026-09-03",
+  "source": "Cloud dev deployment judicious-rat-761, verified runtime runs",
+  "offers": [
+    { "supplier": "Apex Medical Supply", "qty": 70, "unitPriceCents": 1100, "certStatus": "verified", "language": "en" },
+    { "supplier": "BlueRiver Logistics", "qty": 100, "unitPriceCents": 900, "certStatus": "verified", "note": "arrives after deadline" },
+    { "supplier": "Casa Suministros", "qty": 30, "unitPriceCents": 1000, "certStatus": "verified", "language": "es" }
+  ],
+  "canonicalPlan": { "coverage": "100/100", "totalCostCents": 107000, "suppliers": ["Casa Suministros", "Apex Medical Supply"] },
+  "recallDrift": { "coverage": "30/100", "totalCostCents": 30000, "causalDiff": "Source recall removed Apex; plan coverage changed 100 -> 30" },
+  "replacement": { "coverage": "100/100", "totalCostCents": 114000, "suppliers": ["Casa Suministros", "Delta Emergency Stock"] },
+  "counterfactual": { "deadlineExtensionHours": 16, "winner": "BlueRiver Logistics", "totalCostCents": 90000, "savingsCents": 17000 }
+}

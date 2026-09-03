@@ -50,6 +50,16 @@ export function DemoRail({ hasNeed, threadCount, offerCount, verifiedOfferCount,
         })}
       </ol>
       {nextIndex < 0 && <div className="mt-3 text-xs text-emerald-300">Demo complete. Reset is safe to repeat.</div>}
+      <details className="mt-3 rounded-xl border border-dashed border-slate-600 bg-transparent px-3 py-2">
+        <summary className="text-[11px] cursor-pointer text-slate-400">
+          Recorded fixture <span className="mono text-amber-300 border border-amber-400/30 rounded-full px-1.5 py-0.5">FIXTURE</span>
+          <span className="text-slate-500"> — offline reference only, not live proof</span>
+        </summary>
+        <div className="mt-2 text-[11px] mono text-slate-500 leading-relaxed">
+          Canonical: 100/100 · $1,070 (Casa 30 + Apex 70) · recall shortfall 30/100 · replacement 100/100 · +16h counterfactual saves $170.
+          Live values above come from persisted records; see <span className="text-slate-300">fixtures/demo-scenario.json</span>.
+        </div>
+      </details>
     </section>
   );
 }

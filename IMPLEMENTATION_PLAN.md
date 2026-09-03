@@ -310,7 +310,7 @@ This section overrides optimistic checkbox interpretations. A sponsor integratio
 
 ---
 
-## 12) Wow layer — prioritized, concrete, and demoable [12/32]
+## 12) Wow layer — prioritized, concrete, and demoable [15/32]
 
 The features below are not generic extras. Each creates a visible cause-and-effect moment using the sponsor stack. Do not start Tier B until all real sponsor cutover tasks in 11.1 pass.
 
@@ -359,16 +359,16 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.3.3 | Generate one precise clarification | OpenAI asks only unresolved fields (e.g. exact qty and arrival date), not a generic follow-up | `convex/actions/clarify.ts` | [ ] |
 | 11.3.4 | Send clarification after approval and merge reply | AgentMail thread reply creates a new version; old version remains replayable | `convex/actions/sendClarification.ts` | [ ] |
 
-### 11.4 Judge Mode [3/4]
+### 11.4 Judge Mode [4/4]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
 | 11.4.1 | Add idempotent `Reset Demo` | One click deletes only synthetic demo records and recreates a known clean scenario | `convex/demo.ts` | [x] |
 | 11.4.2 | Add guided five-step demo rail | `Create need -> send RFQs -> replies -> verify -> approve` highlights next valid action, never fakes completion | `src/components/DemoRail.tsx` | [x] |
 | 11.4.3 | Add integration health panel | Convex/OpenAI/Firecrawl/AgentMail show `live`, `mock`, `degraded`, or `not configured` from backend checks | `src/components/ProviderProof.tsx`, `convex/health.ts` | [x] |
-| 11.4.4 | Add safe fallback fixtures | If a provider is unavailable, judges can view labeled recorded fixtures, but live proof remains visibly distinct | `fixtures/`, `src/components/DemoRail.tsx` | [ ] |
+| 11.4.4 | Add safe fallback fixtures | If a provider is unavailable, judges can view labeled recorded fixtures, but live proof remains visibly distinct | `fixtures/`, `src/components/DemoRail.tsx` | [x] |
 
-### 11.5 Decision Time Machine [3/5]
+### 11.5 Decision Time Machine [4/5]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
@@ -376,16 +376,16 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.5.2 | Build `getIncidentAt(eventId)` reconstruction query | Query returns deterministic historical state from audit events | `convex/replay.ts` | [x] |
 | 11.5.3 | Add timeline slider | Scrubbing shows offers and selected suppliers at each event | `src/components/DecisionReplay.tsx` | [x] |
 | 11.5.4 | Highlight causal diff | UI states `Source recall removed Apex; plan coverage changed 100 -> 30` | `src/components/DecisionReplay.tsx` | [x] |
-| 11.5.5 | Test replay determinism | Same event ID reconstructs byte-equivalent normalized state twice | `convex/replay.test.ts` | [ ] |
+| 11.5.5 | Test replay determinism | Same event ID reconstructs byte-equivalent normalized state twice | `convex/replay.test.ts` | [x] |
 
-### 11.6 Counterfactual Lab [3/4]
+### 11.6 Counterfactual Lab [4/4]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
 | 11.6.1 | Extract allocator into pure function with constraint overrides | Override deadline/budget/cert without database writes | `convex/lib/allocate.ts` | [x] |
 | 11.6.2 | Add `Why not this supplier?` action | Clicking BlueRiver shows exact failed constraint: delivery after deadline | `src/components/AllocationInspector.tsx` | [x] |
 | 11.6.3 | Add non-mutating what-if controls | Relax deadline by 16h -> BlueRiver wins and savings display; live plan remains unchanged | `src/components/CounterfactualLab.tsx` | [x] |
-| 11.6.4 | Test zero side effects | Counterfactual query leaves plans, approvals, threads, and audit count unchanged | `convex/allocate.test.ts` | [ ] |
+| 11.6.4 | Test zero side effects | Counterfactual query leaves plans, approvals, threads, and audit count unchanged | `convex/allocate.test.ts` | [x] |
 
 ### 11.7 Realtime collaboration presence [0/5] — optional
 
