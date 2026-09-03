@@ -7,6 +7,8 @@ import { AllocationInspector } from "./components/AllocationInspector";
 import { AuditReceipt } from "./components/AuditReceipt";
 import { ProviderProof } from "./components/ProviderProof";
 import { DemoRail } from "./components/DemoRail";
+import { EvidenceDrift } from "./components/EvidenceDrift";
+import { DemoBulletin } from "./pages/DemoBulletin";
 
 export default function App() {
   const incidents = useQuery(api.incidents.listIncidents) ?? [];
@@ -125,6 +127,8 @@ export default function App() {
     showToast("Shortfall simulation: edit offer via Convex dashboard or re-seed with varied qty");
   };
 
+  if (window.location.pathname === "/demo-bulletin") return <DemoBulletin />;
+
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-slate-200">
       {/* Header */}
@@ -220,6 +224,11 @@ export default function App() {
             activeNeed={activeNeed}
             onSelectIncident={(id: string) => setSelectedIncidentId(id)}
             onSelectNeed={(id: string) => setSelectedNeedId(id)}
+          />
+          <EvidenceDrift
+            needId={activeNeed?._id}
+            coverage={latestPlan?.totalQty ?? 0}
+            target={activeNeed?.qty ?? 0}
           />
           <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
             <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Demo controls</div>

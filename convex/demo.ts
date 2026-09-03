@@ -55,6 +55,8 @@ async function deleteDemoIncident(ctx: MutationCtx, incidentId: any) {
     for (const inbox of inboxes) await ctx.db.delete(inbox._id);
     const deliveries = await ctx.db.query("deliveries").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
     for (const delivery of deliveries) await ctx.db.delete(delivery._id);
+    const holdNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    for (const notice of holdNotices) await ctx.db.delete(notice._id);
     const orphanVersions = await ctx.db.query("offerVersions").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
     for (const version of orphanVersions) await ctx.db.delete(version._id);
     await deleteAudit(ctx, "needs", String(need._id));

@@ -9,6 +9,7 @@ build/
 .next/
 out/
 .turbo/
+*.tsbuildinfo
 
 # Convex
 convex/_generated/
