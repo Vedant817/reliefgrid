@@ -7,6 +7,7 @@ export type AllocInput = {
   arrivalAt: number;
   certStatus: string;
   confidence: number;
+  fieldEvidence?: Record<"qty" | "price" | "arrival" | "cert", { confidence: number }>;
 };
 
 export type AllocationResult = {
@@ -26,6 +27,13 @@ export function allocateOffers(
   const eligible: AllocInput[] = [];
 
   for (const o of offers) {
+    const uncertainFields = o.fieldEvidence
+      ? Object.entries(o.fieldEvidence).filter(([, evidence]) => evidence.confidence < 0.75).map(([field]) => field)
+      : [];
+    if (uncertainFields.length > 0) {
+      rejected.push({ ...o, reason: `Needs review: low-confidence ${uncertainFields.join(", ")}` });
+      continue;
+    }
     if (o.arrivalAt > need.deadlineAt) {
       rejected.push({ ...o, reason: `Late: arrives ${new Date(o.arrivalAt).toLocaleString()} after deadline ${new Date(need.deadlineAt).toLocaleString()}` });
       continue;
@@ -34,7 +42,7 @@ export function allocateOffers(
       rejected.push({ ...o, reason: `Cert unverified: requires ${need.certRequired}, got ${o.certStatus}` });
       continue;
     }
-    if (o.confidence < 0.6) {
+    if (o.confidence < 0.75) {
       rejected.push({ ...o, reason: `Low confidence ${o.confidence.toFixed(2)} — needs review` });
       continue;
     }

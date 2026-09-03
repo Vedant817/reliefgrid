@@ -1,6 +1,20 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
+const evidenceSpan = v.object({
+  confidence: v.number(),
+  start: v.number(),
+  end: v.number(),
+  quote: v.string(),
+});
+
+const fieldEvidence = v.object({
+  qty: evidenceSpan,
+  price: evidenceSpan,
+  arrival: evidenceSpan,
+  cert: evidenceSpan,
+});
+
 export default defineSchema({
   incidents: defineTable({
     title: v.string(),
@@ -56,6 +70,7 @@ export default defineSchema({
     certStatus: v.string(), // verified, unverified, needs_review
     conditions: v.array(v.string()),
     confidence: v.number(),
+    fieldEvidence: v.optional(fieldEvidence),
     rawEmailId: v.optional(v.string()),
     language: v.optional(v.string()),
     status: v.string(), // active, superseded
@@ -72,6 +87,7 @@ export default defineSchema({
     certStatus: v.string(),
     conditions: v.array(v.string()),
     confidence: v.number(),
+    fieldEvidence: v.optional(fieldEvidence),
     rawEmailId: v.string(),
     rawBody: v.string(),
     language: v.string(),

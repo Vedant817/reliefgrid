@@ -1,6 +1,9 @@
 import { v } from "convex/values";
-import { mutation, query } from "./_generated/server";
+import { internalQuery, mutation, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
+
+const evidenceSpan = v.object({ confidence: v.number(), start: v.number(), end: v.number(), quote: v.string() });
+const fieldEvidence = v.object({ qty: evidenceSpan, price: evidenceSpan, arrival: evidenceSpan, cert: evidenceSpan });
 
 export const upsertOfferVersion = mutation({
   args: {
@@ -12,6 +15,7 @@ export const upsertOfferVersion = mutation({
     certStatus: v.string(),
     conditions: v.array(v.string()),
     confidence: v.number(),
+    fieldEvidence: v.optional(fieldEvidence),
     rawEmailId: v.string(),
     rawBody: v.string(),
     language: v.string(),
@@ -27,6 +31,7 @@ export const upsertOfferVersion = mutation({
       certStatus: args.certStatus,
       conditions: args.conditions,
       confidence: args.confidence,
+      fieldEvidence: args.fieldEvidence,
       rawEmailId: args.rawEmailId,
       rawBody: args.rawBody,
       language: args.language,
@@ -48,6 +53,7 @@ export const upsertOfferVersion = mutation({
         certStatus: args.certStatus,
         conditions: args.conditions,
         confidence: args.confidence,
+        fieldEvidence: args.fieldEvidence,
         rawEmailId: args.rawEmailId,
         language: args.language,
         updatedAt: Date.now(),
@@ -74,6 +80,7 @@ export const upsertOfferVersion = mutation({
         certStatus: args.certStatus,
         conditions: args.conditions,
         confidence: args.confidence,
+        fieldEvidence: args.fieldEvidence,
         rawEmailId: args.rawEmailId,
         language: args.language,
         status: "active",
@@ -129,4 +136,10 @@ export const listAllOffers = query({
   handler: async (ctx) => {
     return await ctx.db.query("offers").collect();
   },
+});
+
+export const getOfferForClarification = internalQuery({
+  args: { offerId: v.id("offers") },
+  returns: v.any(),
+  handler: async (ctx, args) => await ctx.db.get(args.offerId),
 });

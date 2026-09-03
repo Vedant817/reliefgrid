@@ -25,7 +25,8 @@ export const computeAllocation = mutation({
           unitPriceCents: o.unitPriceCents,
           arrivalAt: o.arrivalAt,
           certStatus: o.certStatus,
-          confidence: o.confidence,
+           confidence: o.confidence,
+          fieldEvidence: o.fieldEvidence,
         };
       }),
     );

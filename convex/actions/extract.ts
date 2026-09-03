@@ -4,6 +4,12 @@ import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
 
+function evidenceSpan(match: RegExpMatchArray | null, confidence: number) {
+  const start = match?.index ?? 0;
+  const quote = match?.[0] ?? "";
+  return { confidence: match ? confidence : 0, start, end: start + quote.length, quote };
+}
+
 // Mock OpenAI extraction — in production, call OpenAI via AI Gateway
 // This keeps the contract: language → structured offer, confidence + conditions
 export const extractOfferFromEmail = action({
@@ -35,12 +41,14 @@ export const extractOfferFromEmail = action({
     if (priceMatch) unitPriceCents = Math.round(parseFloat(priceMatch[1]) * 100);
 
     // arrival
+    const arrivalMatch = text.match(/tomorrow(?: morning)?(?:\s+\d+\s*(?:am|pm))?|\d+\s*(?:a\.?m\.?|p\.?m\.?)/i);
     if (text.includes("tomorrow")) arrivalAt = Date.now() + 24 * 60 * 60 * 1000;
     else if (text.includes("4 pm") || text.includes("4pm")) arrivalAt = Date.now() + 2 * 60 * 60 * 1000;
     else if (text.includes("5 pm") || text.includes("5pm") || text.includes("5 p.m")) arrivalAt = Date.now() + 3 * 60 * 60 * 1000;
 
     // cert
-    if (text.includes("nsf") || text.includes("certified") || text.includes("certificadas")) certStatus = "verified";
+    const certMatch = text.match(/nsf(?:\/ansi)?\s*53|certified|certificadas/i);
+    if (certMatch) certStatus = "verified";
     else if (text.includes("uncertified")) certStatus = "unverified";
 
     if (text.includes("subject to")) {
@@ -51,6 +59,16 @@ export const extractOfferFromEmail = action({
     if (qty === 70 && unitPriceCents === 1100) confidence = 0.97;
     if (qty === 100 && unitPriceCents === 900) confidence = 0.95;
 
+    const fieldEvidence = {
+      qty: evidenceSpan(qtyMatch, 0.98),
+      price: evidenceSpan(priceMatch, 0.97),
+      arrival: evidenceSpan(arrivalMatch, 0.9),
+      cert: evidenceSpan(certMatch, 0.95),
+    };
+    const minimumFieldConfidence = Math.min(...Object.values(fieldEvidence).map((field) => field.confidence));
+    confidence = Math.min(confidence, minimumFieldConfidence);
+    if (minimumFieldConfidence < 0.75) certStatus = "needs_review";
+
     await ctx.runMutation(api.offers.upsertOfferVersion, {
       needId: args.needId,
       supplierId: args.supplierId,
@@ -60,6 +78,7 @@ export const extractOfferFromEmail = action({
       certStatus,
       conditions,
       confidence,
+      fieldEvidence,
       rawEmailId: args.rawEmailId,
       rawBody: args.rawBody,
       language,

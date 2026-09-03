@@ -1,3 +1,6 @@
+import { useState } from "react";
+import { useAction } from "convex/react";
+import { api } from "../../convex/_generated/api";
 import { formatCents, formatDate } from "../lib/format";
 
 function Badge({ children, tone }: any) {
@@ -11,6 +14,11 @@ function Badge({ children, tone }: any) {
 }
 
 export function OfferMatrix({ offers, activeNeed }: any) {
+  const draftClarification = useAction(api.actions.clarify.draftClarification);
+  const sendClarification = useAction(api.actions.clarify.approveAndSendClarification);
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [sent, setSent] = useState<Record<string, boolean>>({});
+
   if (!activeNeed) {
     return (
       <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-6 text-sm text-slate-400">Select a need to view offers.</div>
@@ -48,6 +56,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
         {sorted.map((o: any) => {
           const isLate = activeNeed && o.arrivalAt > activeNeed.deadlineAt;
           const isVerified = o.certStatus === "verified";
+          const ambiguous = o.certStatus === "needs_review" || o.confidence < 0.75;
           return (
             <div key={o._id} className="p-4 hover:bg-[#1a2332]/50">
               <div className="flex items-start justify-between gap-3">
@@ -72,6 +81,50 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                   <Badge key={i} tone="review">{c}</Badge>
                 ))}
               </div>
+
+              {o.fieldEvidence && (
+                <div className="mt-2 flex flex-wrap gap-2 text-[10px] mono text-slate-500">
+                  {Object.entries(o.fieldEvidence).map(([field, evidence]: [string, any]) => (
+                    <span key={field} className={evidence.confidence < 0.75 ? "text-amber-300" : ""}>
+                      {field} {Math.round(evidence.confidence * 100)}%
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {ambiguous && (
+                <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3">
+                  <div className="text-xs font-semibold text-amber-200">Allocator abstained</div>
+                  {!drafts[o._id] ? (
+                    <button
+                      onClick={async () => {
+                        const result = await draftClarification({ offerId: o._id });
+                        setDrafts((current) => ({ ...current, [o._id]: result.question }));
+                      }}
+                      className="mt-2 px-3 py-1.5 rounded-full bg-amber-300 text-[#1c1505] text-xs font-bold"
+                    >
+                      Draft targeted clarification
+                    </button>
+                  ) : (
+                    <div className="mt-2">
+                      <p className="text-xs text-slate-300">{drafts[o._id]}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-[10px] mono text-slate-500">OpenAI: mock</span>
+                        <button
+                          disabled={sent[o._id]}
+                          onClick={async () => {
+                            await sendClarification({ offerId: o._id, approvedBy: "coordinator@reliefgrid.test" });
+                            setSent((current) => ({ ...current, [o._id]: true }));
+                          }}
+                          className="px-3 py-1.5 rounded-full border border-amber-300/30 text-amber-200 text-xs disabled:opacity-50"
+                        >
+                          {sent[o._id] ? "Approved · mock sent" : "Approve & mock send"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="mt-3 rounded-xl bg-[#0f172a] border border-[#1e2d4a] p-3">
                 <div className="text-xs tracking-[0.14em] uppercase text-slate-500">Extracted email</div>
