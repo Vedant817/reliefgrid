@@ -4,7 +4,7 @@ import type { Doc } from "./_generated/dataModel";
 
 declare const process: { env: Record<string, string | undefined> };
 
-type Provider = "convex" | "openai" | "firecrawl" | "agentmail";
+type Provider = "convex" | "openai" | "groq" | "firecrawl" | "agentmail";
 type RunStatus = "live" | "mock" | "degraded" | "not_configured" | "failed";
 
 const runStatus = v.union(
@@ -18,6 +18,7 @@ const runStatus = v.union(
 const provider = v.union(
   v.literal("convex"),
   v.literal("openai"),
+  v.literal("groq"),
   v.literal("firecrawl"),
   v.literal("agentmail"),
 );
@@ -47,6 +48,7 @@ export const getProviderHealth = query({
   handler: async (ctx) => {
     const env = process.env;
     const hasOpenAI = !!env.OPENAI_API_KEY;
+    const hasGroq = !!env.GROQ_API_KEY;
     const hasFirecrawl = !!env.FIRECRAWL_API_KEY;
     const hasAgentMail = !!env.AGENTMAIL_API_KEY;
 
@@ -56,6 +58,7 @@ export const getProviderHealth = query({
 
     const convexRun = lastBy("convex");
     const openaiRun = lastBy("openai");
+    const groqRun = lastBy("groq");
     const firecrawlRun = lastBy("firecrawl");
     const agentmailRun = lastBy("agentmail");
 
@@ -82,6 +85,12 @@ export const getProviderHealth = query({
         status: hasOpenAI ? statusFor(openaiRun) : "mock",
         detail: hasOpenAI ? (openaiRun ? "configured; run evidence below" : "configured; no run verified") : "mock extraction (no key)",
         lastRun: openaiRun,
+      },
+      {
+        provider: "groq",
+        status: hasGroq ? statusFor(groqRun) : "mock",
+        detail: hasGroq ? (groqRun ? "configured; run evidence below" : "configured; no run verified") : "free lane available (no key)",
+        lastRun: groqRun,
       },
       {
         provider: "firecrawl",

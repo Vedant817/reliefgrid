@@ -17,6 +17,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
   const draftClarification = useAction(api.actions.clarify.draftClarification);
   const sendClarification = useAction(api.actions.clarify.approveAndSendClarification);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
+  const [draftStatus, setDraftStatus] = useState<Record<string, string>>({});
   const [sent, setSent] = useState<Record<string, boolean>>({});
 
   if (!activeNeed) {
@@ -100,6 +101,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                       onClick={async () => {
                         const result = await draftClarification({ offerId: o._id });
                         setDrafts((current) => ({ ...current, [o._id]: result.question }));
+                        setDraftStatus((current) => ({ ...current, [o._id]: result.providerStatus }));
                       }}
                       className="mt-2 px-3 py-1.5 rounded-full bg-amber-300 text-[#1c1505] text-xs font-bold"
                     >
@@ -109,7 +111,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                     <div className="mt-2">
                       <p className="text-xs text-slate-300">{drafts[o._id]}</p>
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="text-[10px] mono text-slate-500">OpenAI: mock</span>
+                        <span className="text-[10px] mono text-slate-500">LLM: {draftStatus[o._id] ?? "mock"}</span>
                         <button
                           disabled={sent[o._id]}
                           onClick={async () => {

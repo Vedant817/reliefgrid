@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { chatJson, resolveLlmProvider } from "../lib/llm";
 
 type OfferForClarification = {
   _id: string;
@@ -38,22 +39,49 @@ function buildQuestion(fields: string[]) {
 
 export const draftClarification = action({
   args: { offerId: v.id("offers") },
-  returns: v.object({ question: v.string(), unresolved: v.array(v.string()), providerStatus: v.literal("mock") }),
-  handler: async (ctx, args): Promise<{ question: string; unresolved: string[]; providerStatus: "mock" }> => {
+  returns: v.object({
+    question: v.string(),
+    unresolved: v.array(v.string()),
+    providerStatus: v.union(v.literal("live"), v.literal("mock")),
+  }),
+  handler: async (ctx, args): Promise<{ question: string; unresolved: string[]; providerStatus: "live" | "mock" }> => {
     const startedAt = Date.now();
     const offer = await ctx.runQuery(internal.offers.getOfferForClarification, { offerId: args.offerId });
     if (!offer) throw new Error("Offer not found");
     const unresolved = unresolvedFields(offer);
-    const question = buildQuestion(unresolved);
+    let question = buildQuestion(unresolved);
+    let providerStatus: "live" | "mock" = "mock";
+    let recordProvider: "groq" | "openai" = "openai";
+    let requestId = String(args.offerId);
+    const llm = resolveLlmProvider();
+    if (llm.kind !== "mock" && unresolved.length > 0) {
+      try {
+        const reply = await chatJson(llm, {
+          system:
+            "You write one short supplier-clarification question for emergency procurement. " +
+            "Ask ONLY about the listed unresolved details, naming each explicitly. Plain text, no greeting, no markdown.",
+          user: `Unresolved offer details: ${unresolved.join(", ")}.`,
+        });
+        const trimmed = reply.content.trim();
+        if (trimmed) {
+          question = trimmed;
+          providerStatus = "live";
+          recordProvider = llm.kind;
+          requestId = reply.requestId;
+        }
+      } catch {
+        question = buildQuestion(unresolved);
+      }
+    }
     await ctx.runMutation(api.health.recordProviderRun, {
-      provider: "openai",
+      provider: recordProvider,
       operation: "draft_targeted_clarification",
-      status: "mock",
+      status: providerStatus,
       latencyMs: Date.now() - startedAt,
-      requestId: String(args.offerId),
+      requestId,
       meta: JSON.stringify({ unresolved }),
     });
-    return { question, unresolved, providerStatus: "mock" as const };
+    return { question, unresolved, providerStatus };
   },
 });
 

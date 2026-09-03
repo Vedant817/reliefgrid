@@ -169,6 +169,7 @@ export default defineSchema({
     provider: v.union(
       v.literal("convex"),
       v.literal("openai"),
+      v.literal("groq"),
       v.literal("firecrawl"),
       v.literal("agentmail"),
     ),
