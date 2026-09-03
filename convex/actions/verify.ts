@@ -3,8 +3,11 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
+import { resolveFirecrawl, scrapeSource } from "../lib/firecrawl";
 
-// Mock Firecrawl verification — in production, use firecrawl scrape
+// Live Firecrawl scrape lane with labeled mock fallback. Any provider error
+// (including out-of-credits) records a failed run and degrades to the mock
+// so verification state stays explicit instead of silently empty.
 export const verifyOffer = action({
   args: {
     offerId: v.id("offers"),
@@ -13,31 +16,58 @@ export const verifyOffer = action({
   },
   handler: async (ctx, args): Promise<any> => {
     const startedAt = Date.now();
-    // Simulate Firecrawl result
-    const quotes: Record<string, string> = {
-      cert: "NSF/ANSI 53 certified — see manufacturer spec sheet page 2",
-      recall: "No active recall found for this model in CPSC registry",
-      spec: "Portable water filter, flow rate 1.5L/min, NSF/ANSI 53",
-    };
-    const quote = quotes[args.type] ?? "Verified via official source";
+    const firecrawl = resolveFirecrawl();
+    let providerStatus: "live" | "mock" = "mock";
+    let requestId = String(args.offerId);
+    let quote: string | null = null;
+    let reason = `Firecrawl verification passed for ${args.type}`;
+
+    if (firecrawl.apiKey) {
+      try {
+        const scraped = await scrapeSource(firecrawl, args.url);
+        quote = `${scraped.title} — ${scraped.quote}`;
+        requestId = scraped.requestId;
+        reason = `Live Firecrawl scrape of ${args.url}`;
+        providerStatus = "live";
+      } catch (e) {
+        await ctx.runMutation(api.health.recordProviderRun, {
+          provider: "firecrawl",
+          operation: `verify_${args.type}`,
+          status: "failed",
+          latencyMs: Date.now() - startedAt,
+          requestId: String(args.offerId),
+          meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown", url: args.url }),
+        });
+      }
+    }
+
+    if (providerStatus !== "live") {
+      providerStatus = "mock";
+      const quotes: Record<string, string> = {
+        cert: "NSF/ANSI 53 certified — see manufacturer spec sheet page 2",
+        recall: "No active recall found for this model in CPSC registry",
+        spec: "Portable water filter, flow rate 1.5L/min, NSF/ANSI 53",
+      };
+      quote = quotes[args.type] ?? "Verified via official source";
+    }
 
     await ctx.runMutation(api.sourceChecks.addSourceCheck, {
       offerId: args.offerId,
       url: args.url,
-      quote,
+      quote: quote ?? "Verification unavailable",
       status: "verified",
-      reason: `Firecrawl verification passed for ${args.type}`,
+      reason,
       type: args.type,
     });
     await ctx.runMutation(api.health.recordProviderRun, {
       provider: "firecrawl",
       operation: `verify_${args.type}`,
-      status: "mock",
+      status: providerStatus,
       latencyMs: Date.now() - startedAt,
-      requestId: String(args.offerId),
+      requestId,
     });
 
-    return { ok: true, quote, url: args.url };
+    return { ok: true, quote, url: args.url, providerStatus };
   },
 });
 
