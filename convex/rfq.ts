@@ -71,11 +71,13 @@ export const createRfqThreadsForNeed = mutation({
       const thread = await ctx.db.get(id);
       if (thread) threads.push(thread);
 
+      const needForAudit = await ctx.db.get(args.needId);
       await writeAudit(ctx, {
         entity: "rfqThreads",
         entityId: id,
         action: "create",
         actor: "system",
+        incidentId: needForAudit?.incidentId,
         meta: JSON.stringify({ supplierId, needId: args.needId }),
       });
     }
@@ -129,18 +131,31 @@ export const listThreadsByNeed = query({
   },
 });
 
+const threadStatus = v.union(
+  v.literal("pending"),
+  v.literal("sent"),
+  v.literal("replied"),
+  v.literal("awarded"),
+  v.literal("rejected"),
+  v.literal("clarification_sent"),
+);
+
 export const updateThreadStatus = mutation({
   args: {
     threadId: v.id("rfqThreads"),
-    status: v.string(),
+    status: threadStatus,
   },
   handler: async (ctx, args) => {
+    const thread = await ctx.db.get(args.threadId);
+    if (!thread) throw new Error("Thread not found");
     await ctx.db.patch(args.threadId, { status: args.status, lastReplyAt: Date.now() });
+    const need = await ctx.db.get(thread.needId);
     await writeAudit(ctx, {
       entity: "rfqThreads",
       entityId: args.threadId,
       action: `status:${args.status}`,
       actor: "system",
+      incidentId: need?.incidentId,
     });
   },
 });

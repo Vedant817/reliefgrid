@@ -11,6 +11,8 @@ export const createIncident = mutation({
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    if (!args.title.trim()) throw new Error("title must not be empty");
+    if (args.deadlineAt <= now) throw new Error("deadlineAt must be in the future");
     const id = await ctx.db.insert("incidents", {
       title: args.title,
       description: args.description,
@@ -25,6 +27,7 @@ export const createIncident = mutation({
       entityId: id,
       action: "create",
       actor: "coordinator",
+      incidentId: id,
       meta: JSON.stringify({ title: args.title }),
     });
     return id;
@@ -64,6 +67,7 @@ export const updateIncidentStatus = mutation({
       entityId: args.incidentId,
       action: `status:${args.status}`,
       actor: "system",
+      incidentId: args.incidentId,
     });
     return args.incidentId;
   },

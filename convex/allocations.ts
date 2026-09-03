@@ -39,11 +39,31 @@ export const computeAllocation = mutation({
       partialAllowed: need.partialAllowed,
     });
 
-    // Supersede previous proposed plans
+    // No offers at all: report infeasible without minting a vacuous plan.
+    if (offers.length === 0) {
+      return { planId: null, ...result };
+    }
+
     const existingPlans = await ctx.db
       .query("allocationPlans")
       .withIndex("by_need", (q) => q.eq("needId", args.needId))
       .collect();
+
+    // Idempotent recompute: identical inputs reuse the current proposed plan.
+    const inputHash = JSON.stringify({
+      need: { qty: need.qty, budgetCents: need.budgetCents, deadlineAt: need.deadlineAt },
+      offers: enriched
+        .map((o) => [o.offerId, o.qty, o.unitPriceCents, o.arrivalAt, o.certStatus, o.confidence])
+        .sort(),
+    });
+    const identical = existingPlans.find(
+      (p) => (p.status === "proposed" || p.status === "approved") && p.inputHash === inputHash,
+    );
+    if (identical) {
+      return { planId: identical._id, ...result, deduped: true };
+    }
+
+    // Supersede previous proposed plans
     for (const p of existingPlans) {
       if (p.status === "proposed") {
         await ctx.db.patch(p._id, { status: "superseded" });
@@ -57,6 +77,7 @@ export const computeAllocation = mutation({
       totalQty: result.totalQty,
       createdAt: Date.now(),
       decisionTrace: result.trace,
+      inputHash,
     });
 
     for (const s of result.selected) {
@@ -76,6 +97,7 @@ export const computeAllocation = mutation({
         entityId: planId,
         action: "rejected_offer",
         actor: "allocator",
+        incidentId: need.incidentId,
         meta: JSON.stringify({ supplierId: r.supplierId, reason: r.reason }),
       });
     }
@@ -85,6 +107,7 @@ export const computeAllocation = mutation({
       entityId: planId,
       action: "create",
       actor: "allocator",
+      incidentId: need.incidentId,
       meta: JSON.stringify({ totalQty: result.totalQty, feasible: result.feasible }),
     });
 
@@ -118,7 +141,11 @@ export const listAllocationPlans = query({
             return { ...l, supplier, offer };
           }),
         );
-        return { ...p, lines: linesWithSupplier };
+        const approval = await ctx.db
+          .query("approvals")
+          .withIndex("by_plan", (q) => q.eq("planId", p._id))
+          .first();
+        return { ...p, lines: linesWithSupplier, approval: approval ?? null };
       }),
     );
     return enriched;
@@ -145,7 +172,11 @@ export const getLatestPlan = query({
         return { ...l, supplier };
       }),
     );
-    return { ...plan, lines: linesWithSupplier };
+    const approval = await ctx.db
+      .query("approvals")
+      .withIndex("by_plan", (q) => q.eq("planId", plan._id))
+      .first();
+    return { ...plan, lines: linesWithSupplier, approval: approval ?? null };
   },
 });
 
@@ -158,20 +189,44 @@ export const approvePlan = mutation({
   handler: async (ctx, args) => {
     const plan = await ctx.db.get(args.planId);
     if (!plan) throw new Error("Plan not found");
+    if (plan.status !== "proposed") throw new Error(`Only proposed plans can be approved (got ${plan.status})`);
+    if (plan.totalQty <= 0) throw new Error("Cannot approve a plan covering zero units");
+    const approver = args.approvedBy.trim();
+    if (approver.length < 2) throw new Error("approvedBy must identify the approver");
+    const need = await ctx.db.get(plan.needId);
+    if (!need) throw new Error("Need not found");
     await ctx.db.patch(args.planId, { status: "approved" });
+    const approvedAt = Date.now();
     await ctx.db.insert("approvals", {
       planId: args.planId,
-      approvedBy: args.approvedBy,
-      approvedAt: Date.now(),
+      approvedBy: approver,
+      approvedAt,
       notes: args.notes,
     });
+    // Single-award invariant: approving this plan retires every other live plan.
+    const siblings = await ctx.db
+      .query("allocationPlans")
+      .withIndex("by_need", (q) => q.eq("needId", plan.needId))
+      .collect();
+    for (const sibling of siblings) {
+      if (sibling._id !== args.planId && sibling.status !== "superseded") {
+        await ctx.db.patch(sibling._id, { status: "superseded" });
+      }
+    }
     // Update need to awarded
     await ctx.db.patch(plan.needId, { status: "awarded" });
     await writeAudit(ctx, {
       entity: "allocationPlans",
       entityId: args.planId,
       action: "approved",
-      actor: args.approvedBy,
+      actor: approver,
+      incidentId: need.incidentId,
+      snapshot: JSON.stringify({
+        plan: { id: String(args.planId), coverage: plan.totalQty, costCents: plan.totalCostCents },
+        approvedBy: approver,
+        approvedAt,
+      }),
+      meta: args.notes,
     });
     // Update threads to awarded/rejected
     const lines = await ctx.db

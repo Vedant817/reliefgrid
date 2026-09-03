@@ -21,6 +21,35 @@ export const upsertOfferVersion = mutation({
     language: v.string(),
   },
   handler: async (ctx, args) => {
+    if (args.qty < 0) throw new Error("qty must be >= 0");
+    if (args.unitPriceCents < 0) throw new Error("unitPriceCents must be >= 0");
+    if (!args.rawEmailId.trim()) throw new Error("rawEmailId must not be empty");
+    const need = await ctx.db.get(args.needId);
+    if (!need) throw new Error("Need not found");
+
+    // Replay guard: same email seen before must carry identical terms.
+    const priorVersions = await ctx.db
+      .query("offerVersions")
+      .withIndex("by_need", (q) => q.eq("needId", args.needId))
+      .collect();
+    const sameEmail = priorVersions.find(
+      (ver) => ver.supplierId === args.supplierId && ver.rawEmailId === args.rawEmailId,
+    );
+    if (sameEmail) {
+      const identical =
+        sameEmail.qty === args.qty &&
+        sameEmail.unitPriceCents === args.unitPriceCents &&
+        sameEmail.arrivalAt === args.arrivalAt &&
+        sameEmail.certStatus === args.certStatus;
+      if (!identical) throw new Error("duplicate email with divergent terms rejected");
+      const existingOffer = await ctx.db
+        .query("offers")
+        .withIndex("by_need", (q) => q.eq("needId", args.needId))
+        .collect()
+        .then((offers) => offers.find((o) => o.supplierId === args.supplierId));
+      if (existingOffer) return existingOffer._id;
+    }
+
     const existingOffer = await ctx.db
       .query("offers")
       .withIndex("by_need", (q) => q.eq("needId", args.needId))
@@ -68,6 +97,7 @@ export const upsertOfferVersion = mutation({
         entityId: existingOffer._id,
         action: "update_version",
         actor: "system",
+        incidentId: need.incidentId,
         meta: JSON.stringify({ versionId, qty: args.qty }),
       });
       return existingOffer._id;
@@ -94,6 +124,7 @@ export const upsertOfferVersion = mutation({
         entityId: offerId,
         action: "create",
         actor: "system",
+        incidentId: need.incidentId,
         meta: JSON.stringify({ versionId }),
       });
       return offerId;
@@ -134,9 +165,10 @@ export const listOfferVersions = query({
 });
 
 export const listAllOffers = query({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db.query("offers").collect();
+  args: { limit: v.optional(v.number()) },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    return await ctx.db.query("offers").order("desc").take(Math.min(args.limit ?? 100, 500));
   },
 });
 

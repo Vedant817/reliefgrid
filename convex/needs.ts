@@ -15,6 +15,10 @@ export const createNeed = mutation({
   handler: async (ctx, args) => {
     const incident = await ctx.db.get(args.incidentId);
     if (!incident) throw new Error("Incident not found");
+    if (!args.item.trim()) throw new Error("item must not be empty");
+    if (!Number.isInteger(args.qty) || args.qty < 1) throw new Error("qty must be an integer >= 1");
+    if (args.budgetCents < 0) throw new Error("budgetCents must be >= 0");
+    if (args.deadlineAt <= Date.now()) throw new Error("deadlineAt must be in the future");
     const id = await ctx.db.insert("needs", {
       incidentId: args.incidentId,
       item: args.item,
@@ -31,6 +35,7 @@ export const createNeed = mutation({
       entityId: id,
       action: "create",
       actor: "coordinator",
+      incidentId: args.incidentId,
       meta: JSON.stringify({ item: args.item, qty: args.qty }),
     });
     return id;
@@ -69,6 +74,7 @@ export const updateNeedStatus = mutation({
       entityId: args.needId,
       action: `status:${args.status}`,
       actor: "system",
+      incidentId: need.incidentId,
     });
     return args.needId;
   },

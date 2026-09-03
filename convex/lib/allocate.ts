@@ -16,6 +16,7 @@ export type AllocationResult = {
   totalQty: number;
   totalCostCents: number;
   feasible: boolean;
+  shortfallQty: number;
   trace: string;
 };
 
@@ -104,10 +105,12 @@ export function allocateOffers(
     // Move selected to rejected? Keep selected but mark infeasible
   }
 
+  const shortfallQty = Math.max(0, need.qty - totalQty);
   const trace = [
     `Need: ${need.qty} units, deadline ${new Date(need.deadlineAt).toISOString()}, budget $${(need.budgetCents / 100).toFixed(2)}, cert=${need.certRequired ?? "none"}`,
     `Eligible: ${eligible.length}, Rejected: ${rejected.length}`,
     `Selected ${selected.length} offers totalling ${totalQty} units for $${(totalCost / 100).toFixed(2)}`,
+    shortfallQty > 0 ? `SHORTFALL: ${shortfallQty} of ${need.qty} units uncovered` : `COVERAGE COMPLETE: ${totalQty}/${need.qty}`,
     ...rejected.map((r) => `Rejected ${r.supplierName}: ${r.reason}`),
   ].join("\n");
 
@@ -117,6 +120,7 @@ export function allocateOffers(
     totalQty,
     totalCostCents: totalCost,
     feasible,
+    shortfallQty,
     trace,
   };
 }

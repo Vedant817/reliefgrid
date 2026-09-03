@@ -117,6 +117,7 @@ export default defineSchema({
     totalQty: v.number(),
     createdAt: v.number(),
     decisionTrace: v.optional(v.string()),
+    inputHash: v.optional(v.string()),
   }).index("by_need", ["needId"]),
 
   allocationLines: defineTable({
