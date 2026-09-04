@@ -147,7 +147,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
       </div>
 
       <div className="px-4 py-3 bg-[#0f172a] border-t border-[#1e2d4a] text-[11px] mono text-slate-500">
-        Convex realtime: <span className="text-slate-300">useQuery(listOffersByNeed)</span> updates without refresh · Firecrawl checks stored as <span className="text-slate-300">sourceChecks</span> · OpenAI extraction confidence shown per row
+        Convex realtime: <span className="text-slate-300">useQuery(listOffersByNeed)</span> updates without refresh · Firecrawl checks stored as <span className="text-slate-300">sourceChecks</span> · live LLM extraction confidence shown per row
       </div>
     </div>
   );

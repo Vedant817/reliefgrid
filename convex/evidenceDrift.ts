@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, query, type MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
 import { allocateOffers } from "./lib/allocate";
 import { writeAudit } from "./lib/audit";
@@ -185,17 +185,36 @@ export const addReplacementOffer = mutation({
   },
 });
 
-export const approveHoldNotice = mutation({
-  args: { noticeId: v.id("holdNotices"), approvedBy: v.string() },
-  returns: v.id("holdNotices"),
+export const getHoldNotice = internalQuery({
+  args: { noticeId: v.id("holdNotices") },
+  returns: v.any(),
+  handler: async (ctx, args) => await ctx.db.get(args.noticeId),
+});
+
+export const markHoldNoticeSent = internalMutation({
+  args: {
+    noticeId: v.id("holdNotices"),
+    approvedBy: v.string(),
+    agentmailThreadId: v.string(),
+  },
+  returns: v.null(),
   handler: async (ctx, args) => {
     const notice = await ctx.db.get(args.noticeId);
     if (!notice || notice.status !== "draft") throw new Error("Draft hold notice not found");
-    await ctx.db.patch(args.noticeId, { status: "sent_fixture", approvedAt: Date.now(), approvedBy: args.approvedBy });
-    await ctx.db.insert("providerRuns", {
-      provider: "agentmail", operation: "send_hold_notice", status: "mock", latencyMs: 0,
-      requestId: String(args.noticeId), at: Date.now(), meta: JSON.stringify({ approvedBy: args.approvedBy }),
+    await ctx.db.patch(args.noticeId, {
+      status: "sent",
+      approvedAt: Date.now(),
+      approvedBy: args.approvedBy,
     });
-    return args.noticeId;
+    await ctx.db.insert("providerRuns", {
+      provider: "agentmail",
+      operation: "send_hold_notice",
+      status: "live",
+      latencyMs: 0,
+      requestId: args.agentmailThreadId,
+      at: Date.now(),
+      meta: JSON.stringify({ approvedBy: args.approvedBy }),
+    });
+    return null;
   },
 });

@@ -19,7 +19,11 @@ export const getIncidentAt = query({
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId);
     if (!event) throw new Error("Audit event not found");
-    if (!event.snapshot) throw new Error("This legacy event has no replay snapshot");
+    // Legacy events without snapshots replay as metadata-only so the UI
+    // can never crash on a partial audit trail.
+    if (!event.snapshot) {
+      return { event, snapshot: null, normalizedSnapshot: null };
+    }
     return {
       event,
       snapshot: JSON.parse(event.snapshot),

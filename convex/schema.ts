@@ -204,7 +204,7 @@ export default defineSchema({
   holdNotices: defineTable({
     needId: v.id("needs"),
     offerId: v.id("offers"),
-    status: v.union(v.literal("draft"), v.literal("approved"), v.literal("sent_fixture")),
+    status: v.union(v.literal("draft"), v.literal("approved"), v.literal("sent"), v.literal("sent_fixture")),
     subject: v.string(),
     body: v.string(),
     citationUrl: v.string(),

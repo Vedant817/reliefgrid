@@ -1,4 +1,4 @@
-import { useMutation, useQuery } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 type EvidenceDriftProps = {
@@ -11,7 +11,7 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
   const state = useQuery(api.evidenceDrift.getEvidenceDriftState, needId ? { needId } : {});
   const activateRecall = useMutation(api.evidenceDrift.activateRecall);
   const addReplacement = useMutation(api.evidenceDrift.addReplacementOffer);
-  const approveNotice = useMutation(api.evidenceDrift.approveHoldNotice);
+  const approveNotice = useAction(api.actions.holdNotice.approveAndSendHoldNotice);
   const bulletin = state?.bulletin;
   const notice = state?.holdNotice;
   const recalled = bulletin?.state === "RECALL_ACTIVE";
@@ -51,12 +51,12 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
             <p className="text-[11px] text-slate-400 mt-1">{notice.body}</p>
             {notice.status === "draft" && (
               <button onClick={() => void approveNotice({ noticeId: notice._id, approvedBy: "coordinator@reliefgrid.test" })} className="mt-2 px-3 py-1.5 rounded-full bg-amber-400 text-[#171006] text-xs font-bold">
-                Approve mock send
+                Approve & send hold notice
               </button>
             )}
           </div>
         )}
-        <div className="mt-3 text-[10px] text-slate-500 mono">Recheck/send are labeled mock until provider run evidence is live.</div>
+        <div className="mt-3 text-[10px] text-slate-500 mono">Offer verification runs live via Firecrawl; the controlled bulletin is local-only so its recheck is simulated. Hold-notice send runs live via AgentMail after approval.</div>
       </div>
     </section>
   );

@@ -215,6 +215,22 @@ export const approvePlan = mutation({
     }
     // Update need to awarded
     await ctx.db.patch(plan.needId, { status: "awarded" });
+    const approvedLines = await ctx.db
+      .query("allocationLines")
+      .withIndex("by_plan", (q) => q.eq("planId", args.planId))
+      .collect();
+    const approvedOffers = await Promise.all(
+      approvedLines.map(async (line) => {
+        const supplier = await ctx.db.get(line.supplierId);
+        const offer = await ctx.db.get(line.offerId);
+        return {
+          supplier: supplier?.name ?? "Unknown supplier",
+          qty: line.qty,
+          certStatus: offer?.certStatus ?? "unknown",
+        };
+      }),
+    );
+    const approvedSuppliers = [...new Set(approvedOffers.map((o) => o.supplier))];
     await writeAudit(ctx, {
       entity: "allocationPlans",
       entityId: args.planId,
@@ -222,9 +238,13 @@ export const approvePlan = mutation({
       actor: approver,
       incidentId: need.incidentId,
       snapshot: JSON.stringify({
-        plan: { id: String(args.planId), coverage: plan.totalQty, costCents: plan.totalCostCents },
+        incident: { id: String(need.incidentId) },
+        need: { id: String(plan.needId), item: need.item, qty: need.qty },
+        offers: approvedOffers,
+        plan: { id: String(args.planId), coverage: plan.totalQty, costCents: plan.totalCostCents, suppliers: approvedSuppliers },
         approvedBy: approver,
         approvedAt,
+        causalDiff: `Plan approved by ${approver}; coverage ${plan.totalQty}/${need.qty}`,
       }),
       meta: args.notes,
     });

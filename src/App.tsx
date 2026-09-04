@@ -10,7 +10,7 @@ import { DemoRail } from "./components/DemoRail";
 import { EvidenceDrift } from "./components/EvidenceDrift";
 import { DemoBulletin } from "./pages/DemoBulletin";
 import { CounterfactualLab } from "./components/CounterfactualLab";
-import { DecisionReplay } from "./components/DecisionReplay";
+import { DecisionReplay, ReplayBoundary } from "./components/DecisionReplay";
 
 export default function App() {
   const incidents = useQuery(api.incidents.listIncidents) ?? [];
@@ -245,7 +245,7 @@ export default function App() {
                 Simulate shortfall → new plan
               </button>
             </div>
-            <div className="mt-3 text-[11px] leading-relaxed text-slate-500">Reset creates 3 synthetic offers: Apex 70 (EN), BlueRiver 100 late, Casa 30 (ES). Allocation picks 70+30. Approve to send awards. Real AgentMail and Firecrawl cutover remains pending.</div>
+            <div className="mt-3 text-[11px] leading-relaxed text-slate-500">Reset creates 3 synthetic offers: Apex 70 (EN), BlueRiver 100 late, Casa 30 (ES). Allocation picks 70+30. Extraction runs live via Groq, verification via Firecrawl, RFQ sends via AgentMail — ledger below proves each run.</div>
           </div>
         </div>
 
@@ -264,7 +264,9 @@ export default function App() {
       </div>
 
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6 pb-4">
-        <DecisionReplay incidentId={activeIncident?._id} />
+        <ReplayBoundary key={activeIncident?._id ?? "none"}>
+          <DecisionReplay incidentId={activeIncident?._id} />
+        </ReplayBoundary>
       </div>
 
       {/* Footer proof */}

@@ -1,7 +1,24 @@
-import { useState } from "react";
+import { Component, useState, type ReactNode } from "react";
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { formatCents } from "../lib/format";
+
+export class ReplayBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed) {
+      return (
+        <section className="rounded-2xl bg-[#111827] border border-red-500/30 p-5 text-sm text-red-200">
+          Replay unavailable for this event — the audit trail continues below in the timeline.
+        </section>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function DecisionReplay({ incidentId }: { incidentId?: any }) {
   const timeline = useQuery(api.replay.listTimeline, incidentId ? { incidentId } : "skip") ?? [];
@@ -64,8 +81,8 @@ export function DecisionReplay({ incidentId }: { incidentId?: any }) {
                   <div className="text-[10px] uppercase tracking-wider text-slate-500">Plan at event</div>
                   {snapshot.plan ? (
                     <div className="mt-2">
-                      <div className="text-2xl font-bold">{snapshot.plan.coverage}/{snapshot.need.qty}</div>
-                      <div className="text-xs text-slate-400">{formatCents(snapshot.plan.costCents)} · {snapshot.plan.suppliers.join(" + ")}</div>
+                      <div className="text-2xl font-bold">{snapshot.plan.coverage ?? "?"} / {snapshot.need?.qty ?? "?"}</div>
+                      <div className="text-xs text-slate-400">{formatCents(snapshot.plan.costCents ?? 0)} · {(snapshot.plan.suppliers ?? []).join(" + ") || "no suppliers recorded"}</div>
                     </div>
                   ) : <div className="mt-2 text-xs text-slate-500">Not computed</div>}
                 </div>
