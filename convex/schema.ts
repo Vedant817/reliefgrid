@@ -78,7 +78,9 @@ export default defineSchema({
     lastReplyAt: v.optional(v.number()),
     agentmailThreadId: v.optional(v.string()),
     agentmailMessageId: v.optional(v.string()),
-  }).index("by_need", ["needId"]),
+  })
+    .index("by_need", ["needId"])
+    .index("by_agentmail_thread", ["agentmailThreadId"]),
 
   offers: defineTable({
     needId: v.id("needs"),

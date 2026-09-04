@@ -1,12 +1,25 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, components } from "./_generated/api";
 import { auth } from "./auth.js";
+import { AgentMail } from "@agentmail/convex";
 
 const http = httpRouter();
 
 // Convex Auth OIDC discovery + JWKS (required for socket token verification).
 auth.addHttpRoutes(http);
+
+// AgentMail component webhook: Svix-verified, deduped inbound ingest.
+// Register https://<deployment>.convex.site/agentmail/webhook in the
+// AgentMail console and set AGENTMAIL_WEBHOOK_SECRET on the deployment.
+const agentmail = new AgentMail(components.agentmail);
+http.route({
+  path: "/agentmail/webhook",
+  method: "POST",
+  // Cast: handleWebhook only uses ctx.runMutation, which action ctx provides;
+  // the component's types demand a mutation ctx (fixed upstream).
+  handler: httpAction(async (ctx, req) => agentmail.handleWebhook(ctx as any, req)),
+});
 
 // AgentMail webhook — receives inbound supplier replies
 // In production, verify signature with AGENTMAIL_WEBHOOK_SECRET

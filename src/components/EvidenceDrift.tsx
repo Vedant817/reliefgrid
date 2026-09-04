@@ -1,4 +1,5 @@
 import { useAction, useMutation, useQuery } from "convex/react";
+import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 
 type EvidenceDriftProps = {
@@ -15,6 +16,15 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
   const bulletin = state?.bulletin;
   const notice = state?.holdNotice;
   const recalled = bulletin?.state === "RECALL_ACTIVE";
+  const startRecovery = useMutation(api.recoveryWorkflow.startRecovery);
+  const approveRecovery = useMutation(api.recoveryWorkflow.approveRecovery);
+  const [workflowId, setWorkflowId] = useState<string | null>(null);
+  const wfStatus: any = useQuery(
+    api.recoveryWorkflow.recoveryStatus,
+    workflowId ? { workflowId } : "skip",
+  );
+  const wfState: string = wfStatus?.type ?? "idle";
+  const wfAwaiting = wfStatus?.type === "inProgress" && (wfStatus?.running ?? []).some((s: any) => s.kind === "event");
 
   return (
     <section className={`rounded-2xl border overflow-hidden ${recalled ? "bg-red-950/30 border-red-500/40" : "bg-[#111827] border-[#1e2d4a]"}`}>
@@ -57,6 +67,32 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
           </div>
         )}
         <div className="mt-3 text-[10px] text-slate-500 mono">Offer verification runs live via Firecrawl; the controlled bulletin is local-only so its recheck is simulated. Hold-notice send runs live via AgentMail after approval.</div>
+        <div className="mt-3 rounded-xl border border-violet-400/20 bg-violet-400/5 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-[11px] tracking-[0.12em] uppercase text-violet-300">Guided recovery · durable workflow</div>
+            <span className="text-[10px] mono text-slate-500">{wfState}{wfStatus?.type === "completed" ? ` · ${wfStatus.result?.recoveredQty ?? "?"} units` : ""}</span>
+          </div>
+          <div className="mt-2 grid grid-cols-2 gap-2">
+            <button
+              disabled={!needId}
+              onClick={async () => {
+                const res = await startRecovery({ needId });
+                setWorkflowId(res.workflowId);
+              }}
+              className="px-3 py-2 rounded-xl bg-violet-500/15 border border-violet-500/30 text-violet-200 text-xs font-semibold disabled:opacity-40"
+            >
+              Start guided recovery
+            </button>
+            <button
+              disabled={!workflowId || !wfAwaiting}
+              onClick={() => workflowId && void approveRecovery({ workflowId })}
+              className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs font-semibold disabled:opacity-40"
+            >
+              Approve recovery
+            </button>
+          </div>
+          <div className="mt-2 text-[10px] mono text-slate-500">Steps retry and resume; approval pauses the run with zero resource use.</div>
+        </div>
       </div>
     </section>
   );

@@ -3,7 +3,7 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
-import { resolveFirecrawl, scrapeSource } from "../lib/firecrawl";
+import { resolveFirecrawl, scrapeViaComponent } from "../lib/firecrawl";
 import { checkLimit } from "../rateLimits";
 
 // Live-only Firecrawl verification. There is no mock lane: missing keys or
@@ -23,7 +23,7 @@ export const verifyOffer = action({
 
     let scraped;
     try {
-      scraped = await scrapeSource(firecrawl, args.url);
+      scraped = await scrapeViaComponent(ctx, args.url);
     } catch (e) {
       await ctx.runMutation(api.health.recordProviderRun, {
         provider: "firecrawl",
