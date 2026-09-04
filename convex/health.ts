@@ -1,4 +1,5 @@
 import { query, mutation } from "./_generated/server";
+import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 
@@ -129,5 +130,13 @@ export const listProviderRuns = query({
   returns: v.array(providerRun),
   handler: async (ctx, args) => {
     return await ctx.db.query("providerRuns").withIndex("by_at").order("desc").take(args.limit ?? 20);
+  },
+});
+
+export const listProviderRunsPage = query({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    return await ctx.db.query("providerRuns").withIndex("by_at").order("desc").paginate(args.paginationOpts);
   },
 });

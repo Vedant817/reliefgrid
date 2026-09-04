@@ -6,6 +6,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { chatJson, resolveLlmProvider } from "../lib/llm";
 import { resolveAgentMail, sendAgentMailMessage } from "../lib/agentmail";
+import { checkLimit } from "../rateLimits";
 
 type OfferForClarification = {
   _id: string;
@@ -40,6 +41,7 @@ export const draftClarification = action({
     providerStatus: v.literal("live"),
   }),
   handler: async (ctx, args): Promise<{ question: string; unresolved: string[]; providerStatus: "live" }> => {
+    await checkLimit(ctx, "draftClarification", String(args.offerId));
     const startedAt = Date.now();
     const offer = await ctx.runQuery(internal.offers.getOfferForClarification, { offerId: args.offerId });
     if (!offer) throw new Error("Offer not found");
@@ -101,6 +103,7 @@ export const approveAndSendClarification = action({
     if (!offer) throw new Error("Offer not found");
     const unresolved = unresolvedFields(offer);
     if (unresolved.length === 0) throw new Error("This offer does not need clarification");
+    await checkLimit(ctx, "sendClarification", String(args.offerId));
     const llm = resolveLlmProvider();
     if (llm.kind === "mock") throw new Error("no LLM key configured (GROQ_API_KEY or OPENAI_API_KEY)");
     const mail = resolveAgentMail();

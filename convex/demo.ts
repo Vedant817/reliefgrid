@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, type MutationCtx } from "./_generated/server";
 import { allocateOffers } from "./lib/allocate";
 import { writeAudit } from "./lib/audit";
+import { offersByNeed } from "./offerTotals";
 
 const DEMO_TITLE = "Flood Shelter - North District";
 const LEGACY_DEMO_TITLE = "Flood Shelter — North District";
@@ -44,6 +45,7 @@ async function deleteDemoIncident(ctx: MutationCtx, incidentId: any) {
       const versions = await ctx.db.query("offerVersions").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).collect();
       for (const version of versions) await ctx.db.delete(version._id);
       await deleteAudit(ctx, "offers", String(offer._id));
+      await offersByNeed.delete(ctx, offer);
       await ctx.db.delete(offer._id);
     }
 
@@ -132,6 +134,8 @@ export async function resetDemoData(ctx: MutationCtx) {
       rawBody: fixture.body, language: fixture.language, createdAt: now,
     });
     await ctx.db.patch(offerId, { currentVersionId: versionId });
+    const insertedOffer = await ctx.db.get(offerId);
+    await offersByNeed.insert(ctx, insertedOffer!);
     await ctx.db.insert("sourceChecks", {
       offerId, url: "https://example.com/demo/filter-nsf53", quote: "NSF/ANSI 53 certification confirmed",
       retrievedAt: now, status: "verified", reason: "Labeled synthetic verification fixture", type: "cert",

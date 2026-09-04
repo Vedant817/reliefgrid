@@ -3,6 +3,7 @@ import { internalMutation, internalQuery, mutation, query, type MutationCtx } fr
 import type { Id } from "./_generated/dataModel";
 import { allocateOffers } from "./lib/allocate";
 import { writeAudit } from "./lib/audit";
+import { offersByNeed } from "./offerTotals";
 
 const BULLETIN_KEY = "filter-nsf53";
 const DEMO_TITLE = "Flood Shelter - North District";
@@ -165,6 +166,8 @@ export const addReplacementOffer = mutation({
         offerId, url: "https://example.com/demo/delta-nsf53", quote: "Replacement lot is not affected by bulletin",
         retrievedAt: Date.now(), status: "verified", reason: "Labeled synthetic replacement fixture", type: "recall",
       });
+      const replacementDoc = await ctx.db.get(offerId);
+      await offersByNeed.insert(ctx, replacementDoc!);
     }
     const result = await recompute(ctx, need._id);
     await writeAudit(ctx, {

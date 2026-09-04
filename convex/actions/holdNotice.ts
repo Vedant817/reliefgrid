@@ -5,6 +5,7 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { resolveAgentMail, sendAgentMailMessage } from "../lib/agentmail";
+import { checkLimit } from "../rateLimits";
 
 // Approval-gated live hold-notice send. There is no mock lane: without an
 // AgentMail key, or on provider failure, this throws and the notice stays
@@ -20,6 +21,7 @@ export const approveAndSendHoldNotice = action({
     ctx,
     args,
   ): Promise<{ noticeId: Id<"holdNotices">; agentmailThreadId: string; providerStatus: "live" }> => {
+    await checkLimit(ctx, "sendHoldNotice", String(args.noticeId));
     const approver = args.approvedBy.trim();
     if (approver.length < 2) throw new Error("approvedBy must identify the approver");
     const notice: any = await ctx.runQuery(internal.evidenceDrift.getHoldNotice, { noticeId: args.noticeId });

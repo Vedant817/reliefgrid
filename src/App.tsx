@@ -11,9 +11,36 @@ import { EvidenceDrift } from "./components/EvidenceDrift";
 import { DemoBulletin } from "./pages/DemoBulletin";
 import { CounterfactualLab } from "./components/CounterfactualLab";
 import { DecisionReplay, ReplayBoundary } from "./components/DecisionReplay";
+import { getSessionAlias } from "./lib/session";
+import usePresence from "@convex-dev/presence/react";
+
+function OnlineCoordinators({ roomId }: { roomId?: string }) {
+  const alias = getSessionAlias();
+  const state = usePresence(api.presence, roomId ?? "lobby", alias);
+  const others = (state ?? []).filter((p: any) => p.userId !== alias).slice(0, 4);
+  if (!others.length) return null;
+  return (
+    <span className="hidden xl:inline-flex items-center gap-1.5 text-[11px] text-slate-400">
+      <span className="flex -space-x-1.5">
+        {others.map((p: any) => (
+          <span key={p.userId} title={p.userId} className="w-5 h-5 rounded-full bg-cyan-500/20 border border-cyan-400/40 grid place-items-center text-[9px] text-cyan-300">
+            {(p.userId ?? "?").slice(-2)}
+          </span>
+        ))}
+      </span>
+      {others.length} online
+    </span>
+  );
+}
 
 export default function App() {
-  const incidents = useQuery(api.incidents.listIncidents) ?? [];
+  const allIncidents = useQuery(api.incidents.listIncidents) ?? [];
+  const [incidentSearch, setIncidentSearch] = useState("");
+  const searchedIncidents: any = useQuery(
+    api.search.searchIncidents,
+    incidentSearch.trim() ? { query: incidentSearch } : "skip",
+  ) ?? [];
+  const incidents: any[] = incidentSearch.trim() ? searchedIncidents : allIncidents;
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
 
   // Auto-select first incident when loaded
@@ -148,9 +175,16 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
+            <OnlineCoordinators roomId={(activeIncidentId as string | undefined) ?? "lobby"} />
             <span className="hidden lg:inline text-xs text-slate-400 mono">
               {activeIncident ? `${needs.length} needs · ${offers.length} offers` : "No incident"}
             </span>
+            <input
+              value={incidentSearch}
+              onChange={(e) => setIncidentSearch(e.target.value)}
+              placeholder="Search incidents…"
+              className="hidden md:inline-block w-40 px-3 py-2 rounded-full bg-[#1a2332] border border-[#1e2d4a] text-xs placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/40"
+            />
             <button
               onClick={handleSeed}
               disabled={busy}

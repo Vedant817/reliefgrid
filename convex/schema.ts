@@ -27,7 +27,8 @@ export default defineSchema({
   })
     .index("by_status", ["status"])
     .index("by_deadline", ["deadlineAt"])
-    .index("by_title", ["title"]),
+    .index("by_title", ["title"])
+    .searchIndex("search_title", { searchField: "title" }),
 
   needs: defineTable({
     incidentId: v.id("incidents"),
@@ -41,7 +42,8 @@ export default defineSchema({
     createdAt: v.number(),
   })
     .index("by_incident", ["incidentId"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .searchIndex("search_item", { searchField: "item", filterFields: ["incidentId", "status"] }),
 
   suppliers: defineTable({
     name: v.string(),
@@ -49,7 +51,20 @@ export default defineSchema({
     region: v.string(),
     verified: v.boolean(),
     createdAt: v.number(),
-  }).index("by_email", ["contactEmail"]),
+  })
+    .index("by_email", ["contactEmail"])
+    .searchIndex("search_name", { searchField: "name" }),
+
+  // Supplier evidence attachments (cert PDFs, spec photos). Files live in
+  // Convex storage; tables store only the storage ID, never external URLs.
+  evidenceAttachments: defineTable({
+    offerId: v.id("offers"),
+    storageId: v.id("_storage"),
+    name: v.string(),
+    contentType: v.optional(v.string()),
+    size: v.optional(v.number()),
+    uploadedAt: v.number(),
+  }).index("by_offer", ["offerId"]),
 
   rfqThreads: defineTable({
     needId: v.id("needs"),

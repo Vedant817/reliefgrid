@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalQuery, mutation, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
+import { offersByNeed } from "./offerTotals";
 
 const evidenceSpan = v.object({ confidence: v.number(), start: v.number(), end: v.number(), quote: v.string() });
 const fieldEvidence = v.object({ qty: evidenceSpan, price: evidenceSpan, arrival: evidenceSpan, cert: evidenceSpan });
@@ -89,6 +90,8 @@ export const upsertOfferVersion = mutation({
         updatedAt: Date.now(),
         status: "active",
       });
+      const newDoc = await ctx.db.get(existingOffer._id);
+      await offersByNeed.replace(ctx, existingOffer, newDoc!);
       // Link version to offer
       await ctx.db.patch(versionId, { offerId: existingOffer._id });
 
@@ -119,6 +122,8 @@ export const upsertOfferVersion = mutation({
         updatedAt: Date.now(),
       });
       await ctx.db.patch(versionId, { offerId });
+      const created = await ctx.db.get(offerId);
+      await offersByNeed.insert(ctx, created!);
       await writeAudit(ctx, {
         entity: "offers",
         entityId: offerId,

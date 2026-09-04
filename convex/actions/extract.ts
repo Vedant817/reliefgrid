@@ -10,6 +10,7 @@ import {
   resolveLlmProvider,
   type ExtractedOffer,
 } from "../lib/llm";
+import { checkLimit } from "../rateLimits";
 
 function evidenceSpan(match: RegExpMatchArray | null, confidence: number) {
   const start = match?.index ?? 0;
@@ -37,6 +38,7 @@ export const extractOfferFromEmail = action({
     rawEmailId: v.string(),
   },
   handler: async (ctx, args): Promise<any> => {
+    await checkLimit(ctx, "extractOffer", String(args.needId));
     const startedAt = Date.now();
     const text = args.rawBody.toLowerCase();
     const llm = resolveLlmProvider();

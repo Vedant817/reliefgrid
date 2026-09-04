@@ -4,6 +4,7 @@ import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api } from "../_generated/api";
 import { resolveFirecrawl, scrapeSource } from "../lib/firecrawl";
+import { checkLimit } from "../rateLimits";
 
 // Live-only Firecrawl verification. There is no mock lane: missing keys or
 // provider errors throw after recording a failed run, so verification state
@@ -15,6 +16,7 @@ export const verifyOffer = action({
     url: v.string(),
   },
   handler: async (ctx, args): Promise<any> => {
+    await checkLimit(ctx, "verifySource", String(args.offerId));
     const startedAt = Date.now();
     const firecrawl = resolveFirecrawl();
     if (!firecrawl.apiKey) throw new Error("no Firecrawl key configured (FIRECRAWL_API_KEY)");

@@ -1,4 +1,4 @@
-import { useQuery } from "convex/react";
+import { useQuery, usePaginatedQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 const tone: Record<string, string> = {
@@ -11,7 +11,11 @@ const tone: Record<string, string> = {
 
 export function ProviderProof() {
   const health: any = useQuery(api.health.getProviderHealth) ?? [];
-  const runs: any = useQuery(api.health.listProviderRuns, { limit: 6 }) ?? [];
+  const { results: runs, status, loadMore } = usePaginatedQuery(
+    api.health.listProviderRunsPage,
+    {},
+    { initialNumItems: 6 },
+  );
 
   return (
     <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] overflow-hidden">
@@ -45,6 +49,11 @@ export function ProviderProof() {
               </div>
             ))}
           </div>
+          {status === "CanLoadMore" && (
+            <button onClick={() => loadMore(6)} className="mt-2 text-[11px] text-cyan-300 underline underline-offset-4">
+              Load more runs
+            </button>
+          )}
         </div>
       )}
     </div>

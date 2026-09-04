@@ -1,7 +1,46 @@
 import { useState } from "react";
-import { useAction } from "convex/react";
+import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { formatCents, formatDate } from "../lib/format";
+
+function EvidenceAttach({ offerId }: { offerId: any }) {
+  const attachments: any = useQuery(api.attachments.listAttachmentsByOffer, { offerId }) ?? [];
+  const generateUrl = useMutation(api.attachments.generateUploadUrl);
+  const record = useMutation(api.attachments.recordAttachment);
+  const remove = useMutation(api.attachments.removeAttachment);
+  const [busy, setBusy] = useState(false);
+
+  const onFile = async (file: File | undefined) => {
+    if (!file) return;
+    setBusy(true);
+    try {
+      const url = await generateUrl({ offerId });
+      const res = await fetch(url, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+      if (!res.ok) throw new Error("upload failed");
+      const { storageId } = await res.json();
+      await record({ offerId, storageId, name: file.name, contentType: file.type, size: file.size });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="mt-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-[11px] px-2 py-1 rounded-full border border-slate-500/20 bg-slate-500/10 text-slate-300 cursor-pointer">
+          {busy ? "Uploading…" : "+ Cert evidence"}
+          <input type="file" className="hidden" disabled={busy} onChange={(e) => void onFile(e.target.files?.[0])} />
+        </label>
+        {attachments.map((a: any) => (
+          <span key={a._id} className="text-[11px] mono px-2 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-1">
+            <a href={a.url ?? undefined} target="_blank" rel="noreferrer" className="underline underline-offset-2">{a.name}</a>
+            <button onClick={() => void remove({ attachmentId: a._id })} className="text-slate-500">×</button>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function Badge({ children, tone }: any) {
   const map: any = {
@@ -14,6 +53,10 @@ function Badge({ children, tone }: any) {
 }
 
 export function OfferMatrix({ offers, activeNeed }: any) {
+  const coverage: any = useQuery(
+    api.offerTotals.getNeedCoverage,
+    activeNeed ? { needId: activeNeed._id } : "skip",
+  );
   const draftClarification = useAction(api.actions.clarify.draftClarification);
   const sendClarification = useAction(api.actions.clarify.approveAndSendClarification);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -50,7 +93,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
     <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] overflow-hidden">
       <div className="px-4 py-3 border-b border-[#1e2d4a] flex items-center justify-between">
         <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Live Offer Matrix</div>
-        <span className="text-xs mono text-slate-400">{offers.length} offers · realtime</span>
+        <span className="text-xs mono text-slate-400">{offers.length} offers · {coverage?.totalQty ?? "?"} units quoted · realtime</span>
       </div>
 
       <div className="divide-y divide-[#1e2d4a]">
@@ -140,6 +183,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                     ))}
                   </div>
                 ) : null}
+                <EvidenceAttach offerId={o._id} />
               </div>
             </div>
           );

@@ -1,9 +1,10 @@
 import { cronJobs } from "convex/server";
+import { internal } from "./_generated/api";
 
 const crons = cronJobs();
 
-// Deadline at-risk check is handled client-side via queries + scheduler.
-// Keep cron slot for future server-side escalation (e.g., notify coordinator).
-// Previously scheduled a query which Convex does not allow for crons.
+// Hourly deadline watchdog: escalates needs due within two hours without
+// feasible cover, then schedules a single digest email for the run.
+crons.interval("deadline watchdog", { hours: 1 }, internal.watchdog.checkDeadlines, {});
 
 export default crons;

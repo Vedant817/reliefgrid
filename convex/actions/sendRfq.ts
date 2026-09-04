@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { buildRfqEmail, resolveAgentMail, sendAgentMailMessage } from "../lib/agentmail";
+import { checkLimit } from "../rateLimits";
 
 // Sends a real RFQ email through the configured AgentMail inbox and links the
 // provider thread/message IDs onto the rfqThread. Idempotent: a thread that
@@ -30,6 +31,7 @@ export const sendRfqEmail = action({
     agentmailMessageId: string;
     providerStatus: "live" | "mock";
   }> => {
+    await checkLimit(ctx, "sendRfq", String(args.threadId));
     const startedAt = Date.now();
     const thread: any = await ctx.runQuery(internal.rfq.getThreadForSend, { threadId: args.threadId });
     if (!thread?.need || !thread?.supplier) throw new Error("Thread, need, or supplier not found");
