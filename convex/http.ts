@@ -1,8 +1,12 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api } from "./_generated/api";
+import { auth } from "./auth.js";
 
 const http = httpRouter();
+
+// Convex Auth OIDC discovery + JWKS (required for socket token verification).
+auth.addHttpRoutes(http);
 
 // AgentMail webhook — receives inbound supplier replies
 // In production, verify signature with AGENTMAIL_WEBHOOK_SECRET

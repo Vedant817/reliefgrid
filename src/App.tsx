@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
+import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "../convex/_generated/api";
 import { IncidentBoard } from "./components/IncidentBoard";
 import { OfferMatrix } from "./components/OfferMatrix";
@@ -34,6 +35,11 @@ function OnlineCoordinators({ roomId }: { roomId?: string }) {
 }
 
 export default function App() {
+  const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
+  const { signIn } = useAuthActions();
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) void signIn("anonymous");
+  }, [authLoading, isAuthenticated, signIn]);
   const allIncidents = useQuery(api.incidents.listIncidents) ?? [];
   const [incidentSearch, setIncidentSearch] = useState("");
   const searchedIncidents: any = useQuery(

@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
+import { authTables } from "@convex-dev/auth/server";
 
 const evidenceSpan = v.object({
   confidence: v.number(),
@@ -16,6 +17,7 @@ const fieldEvidence = v.object({
 });
 
 export default defineSchema({
+  ...authTables,
   incidents: defineTable({
     title: v.string(),
     orgId: v.optional(v.string()),

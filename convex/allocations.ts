@@ -191,7 +191,10 @@ export const approvePlan = mutation({
     if (!plan) throw new Error("Plan not found");
     if (plan.status !== "proposed") throw new Error(`Only proposed plans can be approved (got ${plan.status})`);
     if (plan.totalQty <= 0) throw new Error("Cannot approve a plan covering zero units");
-    const approver = args.approvedBy.trim();
+    // Identity is server-derived: an authenticated session always wins over
+    // the client-supplied name, which survives only as a CLI fallback.
+    const identity = await ctx.auth.getUserIdentity();
+    const approver = (identity?.name ?? identity?.subject ?? args.approvedBy).trim();
     if (approver.length < 2) throw new Error("approvedBy must identify the approver");
     const need = await ctx.db.get(plan.needId);
     if (!need) throw new Error("Need not found");
