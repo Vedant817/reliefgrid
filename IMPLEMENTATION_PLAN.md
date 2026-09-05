@@ -310,7 +310,7 @@ This section overrides optimistic checkbox interpretations. A sponsor integratio
 
 ---
 
-## 12) Wow layer — prioritized, concrete, and demoable [37/47]
+## 12) Wow layer — prioritized, concrete, and demoable [40/47]
 
 The features below are not generic extras. Each creates a visible cause-and-effect moment using the sponsor stack. Do not start Tier B until all real sponsor cutover tasks in 11.1 pass.
 
@@ -340,7 +340,7 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.1.8 | Add Firecrawl live-only scrape lane | Component v2 scrape stores title + excerpt as source-check quote; missing keys and provider errors throw after recording failed runs | `convex/lib/firecrawl.ts`, `convex/actions/verify.ts` | [x] |
 | 11.1.9 | Register inbound webhook + prove reply loop | Console webhook registered, secret set, supplier reply creates exactly one offer version via verified ingest | `convex/http.ts`, `convex/email.ts` | [ ] |
 
-### 11.2 Evidence Drift / Source Flip [4/6] — hero feature
+### 11.2 Evidence Drift / Source Flip [5/6] — hero feature
 
 **Demo contract:** Apex is selected at 70 units. A controlled manufacturer bulletin changes to `RECALL ACTIVE`. Firecrawl re-scrapes it. Convex marks the source stale/failed, supersedes the plan, and streams a shortfall. OpenAI explains the change. AgentMail drafts (but does not automatically send) a hold notice.
 
@@ -349,7 +349,7 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.2.1 | Add controlled public manufacturer bulletin | Public route renders stable `CLEAR` state and can switch to `RECALL ACTIVE` using a guarded demo mutation | `src/pages/DemoBulletin.tsx`, `convex/demo.ts` | [x] |
 | 11.2.2 | Add Firecrawl recheck action | Actual Firecrawl scrape reads the public bulletin after each state change and stores content hash + quote | `convex/actions/recheckSource.ts` | [ ] |
 | 11.2.3 | Invalidate affected offer and active plan | `sourceChecks: verified -> failed`; offer becomes ineligible; active plan becomes `superseded` in one durable workflow | `convex/sourceChecks.ts`, `convex/workflows.ts` | [x] |
-| 11.2.4 | Stream recovery to every client | Two browser sessions show `100/100 -> 30/100 shortfall -> replacement plan` without refresh or polling | `src/components/IncidentBoard.tsx` | [ ] |
+| 11.2.4 | Stream recovery to every client | Two browser sessions show `100/100 -> 30/100 shortfall -> replacement plan` without refresh or polling | `src/components/IncidentBoard.tsx` | [x] |
 | 11.2.5 | Draft hold notice through AgentMail | Human sees cited reason and approves before send; no autonomous purchasing or cancellation | `convex/actions/awards.ts`, `src/components/HoldNotice.tsx` | [x] |
 | 11.2.6 | Guided recovery as durable workflow | Invalidate -> draft -> human gate (pauses free) -> replace -> recompute completes with status UI | `convex/recoveryWorkflow.ts`, `src/components/EvidenceDrift.tsx` | [x] |
 
@@ -392,15 +392,15 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.6.3 | Add non-mutating what-if controls | Relax deadline by 16h -> BlueRiver wins and savings display; live plan remains unchanged | `src/components/CounterfactualLab.tsx` | [x] |
 | 11.6.4 | Test zero side effects | Counterfactual query leaves plans, approvals, threads, and audit count unchanged | `convex/allocate.test.ts` | [x] |
 
-### 11.7 Realtime collaboration presence [3/5] — optional
+### 11.7 Realtime collaboration presence [5/5] — optional
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
 | 11.7.1 | Add coordinator session identity | Anonymous judge receives random session alias, no PII | `src/lib/session.ts` | [x] |
 | 11.7.2 | Add presence heartbeat | Active coordinators appear/disappear within bounded timeout | `convex/presence.ts` | [x] |
-| 11.7.3 | Show who is reviewing an offer | Offer row shows `Coordinator 2 reviewing` live | `src/components/OfferMatrix.tsx` | [ ] |
+| 11.7.3 | Show who is reviewing an offer | Offer row shows `Coordinator 2 reviewing` live | `src/components/OfferMatrix.tsx` | [x] |
 | 11.7.4 | Prevent conflicting approvals | Atomic mutation rejects approval after plan is superseded/approved | `convex/allocations.ts` | [x] |
-| 11.7.5 | Verify two-browser concurrency | Playwright two contexts prove presence + single-winner approval | `e2e/realtime.spec.ts` | [ ] |
+| 11.7.5 | Verify two-browser concurrency | Playwright two contexts prove presence + single-winner approval | `e2e/realtime.spec.ts` | [x] |
 
 ### 11.8 Platform depth — full Convex use [10/10]
 
