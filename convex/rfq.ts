@@ -99,16 +99,8 @@ export const createRfqThreadsForNeed = mutation({
       }
     }
 
-    await ctx.db.insert("providerRuns", {
-      provider: "agentmail",
-      operation: "create_rfq_threads",
-      status: "mock",
-      latencyMs: 0,
-      requestId: String(args.needId),
-      at: Date.now(),
-      meta: JSON.stringify({ suppliers: args.supplierIds.length }),
-    });
-
+    // No provider run is recorded here: thread records are local until a
+    // real send attaches provider IDs, so the ledger only stores real attempts.
     return threads;
   },
 });

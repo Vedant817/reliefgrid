@@ -42,6 +42,11 @@ async function deleteDemoIncident(ctx: MutationCtx, incidentId: any) {
     for (const offer of offers) {
       const checks = await ctx.db.query("sourceChecks").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).collect();
       for (const check of checks) await ctx.db.delete(check._id);
+      const attachments = await ctx.db.query("evidenceAttachments").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).collect();
+      for (const attachment of attachments) {
+        await ctx.storage.delete(attachment.storageId);
+        await ctx.db.delete(attachment._id);
+      }
       const versions = await ctx.db.query("offerVersions").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).collect();
       for (const version of versions) await ctx.db.delete(version._id);
       await deleteAudit(ctx, "offers", String(offer._id));

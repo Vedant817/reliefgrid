@@ -110,15 +110,9 @@ export const activateRecall = mutation({
       citationUrl,
       createdAt: Date.now(),
     });
-    await ctx.db.insert("providerRuns", {
-      provider: "firecrawl",
-      operation: "recheck_controlled_bulletin",
-      status: "mock",
-      latencyMs: 0,
-      requestId: String(offer._id),
-      at: Date.now(),
-      meta: JSON.stringify({ state: "RECALL_ACTIVE", citationUrl }),
-    });
+    // No provider run is recorded here: the controlled bulletin is local-only
+    // so this recheck is simulated, and the ledger only stores real attempts.
+    // The invalidation itself is audited below.
     const result = await recompute(ctx, need._id);
     await writeAudit(ctx, {
       entity: "offers",

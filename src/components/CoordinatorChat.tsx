@@ -9,8 +9,10 @@ function messageText(m: any): string {
   if (!Array.isArray(parts)) return "";
   return parts
     .map((p: any) => {
+      // Reasoning traces and tool payloads are never user-facing answers.
+      if (p.type === "reasoning" || p.output !== undefined || p.args !== undefined) return "";
+      if (p.type !== undefined && p.type !== "text") return "";
       if (typeof p.text === "string") return p.text;
-      if (p.output !== undefined) return "";
       return "";
     })
     .filter(Boolean)
