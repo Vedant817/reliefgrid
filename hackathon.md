@@ -12,7 +12,7 @@
 - **Auth:** none
 - **AI models:** none
 - **Started:** 2026-09-02T17:02:09Z
-- **Last updated:** 2026-09-05T11:34:27Z
+- **Last updated:** 2026-09-05T12:05:22Z
 
 ## Log
 
@@ -72,3 +72,6 @@ With the webhook secret set, unsigned posts to the ingest route are rejected wit
 
 ### 2026-09-05 - issues resolved
 Worked through the open-issue list and resolved everything resolvable without new credentials: purged all red-team scratch incidents (adding a reusable purge mutation, and fixing a real aggregate corruption found along the way with a clear-plus-rebuild repair plus tolerant deletes); proved two-browser drift sync with zero reload and single-winner approval races across isolated sessions; recorded replaced-plan lineage on every approval; added need-level reviewing presence to the offer matrix; committed the build log after a clean PII scan. Remaining rows are credential- or console-side: per-need inbox creation (scoped key), OpenAI lane (no key), genuine reply-match proof, public bulletin scrape, prod deploy and submission. Plan ledger 40/47; full browser regression green with zero errors.
+
+### 2026-09-05 - reply loop closed
+With a full-access key, every remaining mail-side row closed in one pass: one real inbox per need created and mapped idempotently, an org-wide webhook registered with its secret rotated server-side, and a genuine two-inbox round trip completed — RFQ sent, supplier reply in-thread, signed webhook ingest, thread matched, live extraction into exactly one offer version that correctly abstained on the ambiguous price. Scratch inboxes deleted and test data purged. All three browser harnesses re-ran green (flow, two-user prod run, two-browser sync plus approval race with exactly one winner). Plan ledger 42/47; demo restored canonical.
