@@ -28,7 +28,13 @@ export const sendRfqViaComponent = mutation({
       return { outboundId: thread.agentmailMessageId, providerStatus: "live" as const };
     }
     const { subject, text } = buildRfqEmail(need, supplier.name);
-    const outboundId: string = await agentmail().sendMessage(ctx, mail.inboxId, {
+    // Prefer the need's own real inbox; fall back to the default sender.
+    const mapped = await ctx.db
+      .query("inboxes")
+      .withIndex("by_need", (q) => q.eq("needId", thread.needId))
+      .first();
+    const senderInbox = mapped?.inboxId ?? mail.inboxId;
+    const outboundId: string = await agentmail().sendMessage(ctx, senderInbox, {
       to: args.toOverride ?? mail.inboxId,
       subject,
       text,
@@ -37,7 +43,7 @@ export const sendRfqViaComponent = mutation({
     await ctx.db.patch(args.threadId, {
       status: "sent",
       sentAt: Date.now(),
-      inboxId: mail.inboxId,
+      inboxId: senderInbox,
       agentmailMessageId: outboundId,
     });
     await ctx.db.insert("providerRuns", {

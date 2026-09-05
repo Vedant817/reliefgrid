@@ -310,7 +310,7 @@ This section overrides optimistic checkbox interpretations. A sponsor integratio
 
 ---
 
-## 12) Wow layer — prioritized, concrete, and demoable [40/47]
+## 12) Wow layer — prioritized, concrete, and demoable [42/47]
 
 The features below are not generic extras. Each creates a visible cause-and-effect moment using the sponsor stack. Do not start Tier B until all real sponsor cutover tasks in 11.1 pass.
 
@@ -326,14 +326,14 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | B2 | Counterfactual Lab | Explains why cheapest did not win without changing live state | Ship if A tiers are stable |
 | B3 | Live coordinator presence | Shows collaboration, but adds less product value than evidence drift | Optional |
 
-### 11.1 Real sponsor cutover [5/9]
+### 11.1 Real sponsor cutover [7/9]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
 | 11.1.1 | Replace extraction mock with OpenAI structured output | A real EN email and a real ES email produce schema-valid offers; model and request ID stored without prompt/private body | `convex/actions/extract.ts`, `convex/lib/extractOffer.ts` | [ ] |
 | 11.1.2 | Replace source-check mock with Firecrawl scrape | Component v2 scrape of a real public page stores title + excerpt as source-check quote with live ledger evidence | `convex/lib/firecrawl.ts`, `convex/actions/verify.ts` | [x] |
-| 11.1.3 | Create one real AgentMail inbox per Need | Inbox ID stored in Convex; address never printed to `hackathon.md` or public audit | `convex/lib/agentmail.ts` | [ ] |
-| 11.1.4 | Prove send -> reply -> signed webhook -> offer version | Controlled inbox receives RFQ; reply creates exactly one offer version; duplicate webhook remains idempotent | `convex/http.ts`, `convex/email.ts` | [ ] |
+| 11.1.3 | Create one real AgentMail inbox per Need | Real per-need inbox created and mapped in Convex; idempotent re-run returns the mapping | `convex/actions/inboxes.ts`, `convex/inboxes.ts` | [x] |
+| 11.1.4 | Prove send -> reply -> signed webhook -> offer version | Real RFQ between two live inboxes; supplier reply ingested via verified webhook and extracted into exactly one live offer version | `convex/email.ts`, `convex/actions/extract.ts` | [x] |
 | 11.1.5 | Add provider execution ledger | UI shows safe status, latency, timestamp, and provider request ID for OpenAI/Firecrawl/AgentMail; never secrets/content | `convex/schema.ts`, `src/components/ProviderProof.tsx` | [x] |
 | 11.1.6 | Add free Groq live-only lane | Extraction + clarification require a live model; failures throw after recording failed runs; ambiguous mail still abstains via nulls | `convex/lib/llm.ts`, `convex/actions/extract.ts`, `convex/actions/clarify.ts`, `convex/health.ts` | [x] |
 | 11.1.7 | Add live AgentMail RFQ + clarification send lane | Real sends through scoped inbox with thread/message IDs stored; idempotent RFQ re-send; approval-gated clarification send; ledger records live | `convex/lib/agentmail.ts`, `convex/actions/sendRfq.ts`, `convex/actions/clarify.ts`, `convex/rfq.ts` | [x] |

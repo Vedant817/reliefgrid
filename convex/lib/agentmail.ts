@@ -32,16 +32,38 @@ export function buildRfqEmail(need: { item: string; qty: number; deadlineAt: num
   return { subject, text };
 }
 
+export async function createAgentMailInbox(
+  config: AgentMailConfig,
+  username: string,
+  displayName: string,
+  timeoutMs = 20000,
+): Promise<{ inboxId: string; email: string; latencyMs: number }> {
+  if (!config.apiKey) throw new Error("no AgentMail key configured");
+  const startedAt = Date.now();
+  const res = await fetch("https://api.agentmail.to/v0/inboxes", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ username, display_name: displayName }),
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  if (!res.ok) throw new Error(`AgentMail HTTP ${res.status}`);
+  const body = (await res.json()) as { inbox_id?: string; email?: string };
+  if (!body.inbox_id || !body.email) throw new Error("AgentMail inbox creation missing ids");
+  return { inboxId: body.inbox_id, email: body.email, latencyMs: Date.now() - startedAt };
+}
+
 export async function sendAgentMailMessage(
   config: AgentMailConfig,
   to: string,
   subject: string,
   text: string,
   timeoutMs = 20000,
+  fromInboxId?: string,
 ): Promise<{ messageId: string; threadId: string; latencyMs: number }> {
   if (!config.apiKey) throw new Error("no AgentMail key configured");
   const startedAt = Date.now();
-  const res = await fetch(`https://api.agentmail.to/v0/inboxes/${encodeURIComponent(config.inboxId)}/messages/send`, {
+  const sender = fromInboxId ?? config.inboxId;
+  const res = await fetch(`https://api.agentmail.to/v0/inboxes/${encodeURIComponent(sender)}/messages/send`, {
     method: "POST",
     headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
     body: JSON.stringify({ to, subject, text }),
