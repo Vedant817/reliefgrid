@@ -310,7 +310,7 @@ This section overrides optimistic checkbox interpretations. A sponsor integratio
 
 ---
 
-## 12) Wow layer — prioritized, concrete, and demoable [36/47]
+## 12) Wow layer — prioritized, concrete, and demoable [37/47]
 
 The features below are not generic extras. Each creates a visible cause-and-effect moment using the sponsor stack. Do not start Tier B until all real sponsor cutover tasks in 11.1 pass.
 
@@ -402,7 +402,7 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.7.4 | Prevent conflicting approvals | Atomic mutation rejects approval after plan is superseded/approved | `convex/allocations.ts` | [x] |
 | 11.7.5 | Verify two-browser concurrency | Playwright two contexts prove presence + single-winner approval | `e2e/realtime.spec.ts` | [ ] |
 
-### 11.8 Platform depth — full Convex use [9/10]
+### 11.8 Platform depth — full Convex use [10/10]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
@@ -415,7 +415,7 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.8.7 | Paginated provider runs | Run ledger pages on demand instead of unbounded reads | `convex/health.ts`, `src/components/ProviderProof.tsx` | [x] |
 | 11.8.8 | Coordinator agent with tools | Agent answers coverage/search/what-if/timeline/semantics questions from live data in chat UI | `convex/coordinator.ts`, `src/components/CoordinatorChat.tsx` | [x] |
 | 11.8.9 | Integration tests on transactions | Approval guards, validators, replay, forged identity, enum rejection proven in-memory | `convex/hardening.test.ts` | [x] |
-| 11.8.10 | Vector search over offer bodies | 768-dim index + backfill + semantic supplier search live | `convex/embeddings.ts` | [ ] |
+| 11.8.10 | Vector search over offer bodies | 768-dim index + backfill + semantic supplier search live | `convex/embeddings.ts` | [x] |
 
 ---
 

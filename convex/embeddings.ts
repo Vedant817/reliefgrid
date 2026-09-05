@@ -12,18 +12,22 @@ function geminiKey(): string {
   return key;
 }
 
-// Gemini text-embedding-004: 768 dimensions, free tier. Single source of
-// embeddings so stored vectors and query vectors always share the space.
+// Gemini gemini-embedding-001 truncated to 768 dimensions (matches the
+// by_embedding index), free tier. Single source of embeddings so stored
+// vectors and query vectors always share the space.
 export async function embedTexts(texts: string[]): Promise<number[][]> {
   const key = geminiKey();
   const out: number[][] = [];
   for (const text of texts) {
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${key}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-embedding-001:embedContent?key=${key}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: { parts: [{ text: text.slice(0, 8000) }] } }),
+        body: JSON.stringify({
+          content: { parts: [{ text: text.slice(0, 8000) }] },
+          outputDimensionality: 768,
+        }),
         signal: AbortSignal.timeout(20000),
       },
     );
