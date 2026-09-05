@@ -22,7 +22,20 @@ export const checkDeadlines = internalMutation({
       .withIndex("by_status", (q) => q.eq("status", "awaiting_responses"))
       .take(100);
     const atRisk = [...candidates, ...awaiting].filter((need) => need.deadlineAt < horizon);
+    // Dedup: skip needs escalated within the last 12h so a stuck need
+    // produces one digest per half-day, not one per hour.
+    const since = now - 12 * 60 * 60 * 1000;
+    const fresh: typeof atRisk = [];
     for (const need of atRisk) {
+      const recent = await ctx.db
+        .query("auditEvents")
+        .withIndex("by_entity", (q) => q.eq("entity", "needs").eq("entityId", need._id))
+        .order("desc")
+        .take(10);
+      if (recent.some((e) => e.action === "deadline_escalation" && e.at > since)) continue;
+      fresh.push(need);
+    }
+    for (const need of fresh) {
       await writeAudit(ctx, {
         entity: "needs",
         entityId: need._id,
@@ -32,9 +45,9 @@ export const checkDeadlines = internalMutation({
         meta: JSON.stringify({ item: need.item, qty: need.qty, deadlineAt: need.deadlineAt }),
       });
     }
-    if (atRisk.length > 0) {
+    if (fresh.length > 0) {
       await ctx.scheduler.runAfter(0, internal.actions.notify.sendDeadlineDigest, {
-        items: atRisk.map((need) => ({
+        items: fresh.map((need) => ({
           needId: need._id,
           item: need.item,
           qty: need.qty,
@@ -42,6 +55,6 @@ export const checkDeadlines = internalMutation({
         })),
       });
     }
-    return { atRisk: atRisk.length };
+    return { atRisk: fresh.length };
   },
 });
