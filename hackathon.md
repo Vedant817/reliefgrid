@@ -12,7 +12,7 @@
 - **Auth:** none
 - **AI models:** none
 - **Started:** 2026-09-02T17:02:09Z
-- **Last updated:** 2026-09-05T11:14:14Z
+- **Last updated:** 2026-09-05T11:34:27Z
 
 ## Log
 
@@ -69,3 +69,6 @@ Set the embeddings key server-side and brought vectors live: corrected the retir
 
 ### 2026-09-05 - inbound delivery proven
 With the webhook secret set, unsigned posts to the ingest route are rejected with 401, and a real supplier-style email from an external mailbox arrived end-to-end: provider delivery, signed webhook, deduped component ingest with labels and thread linkage, all queryable from the app with extracted text. The reply-to-offer mapping stands ready for the first genuine supplier reply to an RFQ thread. No addresses or message content recorded here by policy (`convex/http.ts`, `convex/email.ts`).
+
+### 2026-09-05 - issues resolved
+Worked through the open-issue list and resolved everything resolvable without new credentials: purged all red-team scratch incidents (adding a reusable purge mutation, and fixing a real aggregate corruption found along the way with a clear-plus-rebuild repair plus tolerant deletes); proved two-browser drift sync with zero reload and single-winner approval races across isolated sessions; recorded replaced-plan lineage on every approval; added need-level reviewing presence to the offer matrix; committed the build log after a clean PII scan. Remaining rows are credential- or console-side: per-need inbox creation (scoped key), OpenAI lane (no key), genuine reply-match proof, public bulletin scrape, prod deploy and submission. Plan ledger 40/47; full browser regression green with zero errors.
