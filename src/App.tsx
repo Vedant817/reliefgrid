@@ -12,6 +12,7 @@ import { EvidenceDrift } from "./components/EvidenceDrift";
 import { DemoBulletin } from "./pages/DemoBulletin";
 import { CounterfactualLab } from "./components/CounterfactualLab";
 import { DecisionReplay, ReplayBoundary } from "./components/DecisionReplay";
+import { CoordinatorChat } from "./components/CoordinatorChat";
 import { getSessionAlias } from "./lib/session";
 import usePresence from "@convex-dev/presence/react";
 
@@ -299,6 +300,7 @@ export default function App() {
           <AllocationInspector plan={latestPlan} need={activeNeed} offers={offers} />
           <AuditReceipt need={activeNeed} plan={latestPlan} />
           <CounterfactualLab needId={activeNeed?._id} />
+          <CoordinatorChat needId={activeNeed?._id} />
           <ProviderProof />
         </div>
       </div>
