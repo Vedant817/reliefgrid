@@ -169,6 +169,24 @@ export const listOfferVersions = query({
   },
 });
 
+export const listAllOfferVersions = query({
+  args: {},
+  returns: v.any(),
+  handler: async (ctx) => {
+    return await ctx.db.query("offerVersions").order("desc").take(200);
+  },
+});
+
+export const storeOfferEmbedding = mutation({
+  args: { versionId: v.id("offerVersions"), embedding: v.array(v.number()) },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    if (args.embedding.length !== 768) throw new Error("embedding must be 768 dimensions");
+    await ctx.db.patch(args.versionId, { embedding: args.embedding });
+    return null;
+  },
+});
+
 export const listAllOffers = query({
   args: { limit: v.optional(v.number()) },
   returns: v.any(),

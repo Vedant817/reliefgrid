@@ -115,9 +115,14 @@ export default defineSchema({
     rawBody: v.string(),
     language: v.string(),
     createdAt: v.number(),
+    embedding: v.optional(v.array(v.number())),
   })
     .index("by_offer", ["offerId"])
-    .index("by_need", ["needId"]),
+    .index("by_need", ["needId"])
+    .vectorIndex("by_embedding", {
+      vectorField: "embedding",
+      dimensions: 768,
+    }),
 
   sourceChecks: defineTable({
     offerId: v.id("offers"),

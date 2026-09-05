@@ -19,7 +19,7 @@ function groqModel() {
 // Coordinator assistant: answers status questions with live tools instead of
 // guessing. Tools are read-only; clarification drafting stays human-approved
 // in the UI and never auto-sends.
-export const reliefAgent = new Agent(components.agent, {
+export const reliefAgent: Agent = new Agent(components.agent, {
   name: "ReliefGrid Coordinator",
   languageModel: groqModel(),
   stopWhen: stepCountIs(5),
@@ -66,6 +66,13 @@ export const reliefAgent = new Agent(components.agent, {
           savingsCents: result.savingsCents,
           rejected: result.baseline.rejected.map((r: any) => `${r.supplierName}: ${r.reason}`),
         };
+      },
+    }),
+    similarSuppliers: createTool({
+      description: "Find past supplier offers semantically similar to a need description.",
+      inputSchema: z.object({ text: z.string() }),
+      execute: async (ctx: ToolCtx, args: { text: string }) => {
+        return await ctx.runAction(api.embeddings.findSimilarOffers, { text: args.text, limit: 5 });
       },
     }),
     recentTimeline: createTool({
