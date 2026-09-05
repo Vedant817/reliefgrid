@@ -70,6 +70,17 @@ export const listComponentThread = query({
   },
 });
 
+// Recent inbound mail for an inbox, as synced by the webhook ingest.
+export const listInboxMessages = query({
+  args: { inboxId: v.string() },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    return await ctx.runQuery(components.agentmail.lib.listInboundMessages, {
+      inboxId: args.inboxId,
+    });
+  },
+});
+
 // Inbound reply handler, invoked by the component after Svix verification and
 // event dedup. Links the reply thread back to our RFQ thread and schedules
 // live extraction, closing the send → reply → offer loop.
