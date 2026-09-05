@@ -1,13 +1,13 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
-import { api, components, internal } from "./_generated/api";
-import { AgentMail } from "@agentmail/convex";
+import { api, components } from "./_generated/api";
+import { getAgentMail } from "./agentmailClient";
 import { buildRfqEmail, resolveAgentMail } from "./lib/agentmail";
 import { checkLimit } from "./rateLimits";
 
-const agentmail: AgentMail = new AgentMail(components.agentmail, {
-  onMessageReceived: internal.email.onInboundReply,
-});
+function agentmail() {
+  return getAgentMail();
+}
 
 // Sends a real RFQ through the AgentMail component: durable enqueue from the
 // mutation, provider delivery with bounded retries in the workpool, and a
@@ -28,7 +28,7 @@ export const sendRfqViaComponent = mutation({
       return { outboundId: thread.agentmailMessageId, providerStatus: "live" as const };
     }
     const { subject, text } = buildRfqEmail(need, supplier.name);
-    const outboundId: string = await agentmail.sendMessage(ctx, mail.inboxId, {
+    const outboundId: string = await agentmail().sendMessage(ctx, mail.inboxId, {
       to: args.toOverride ?? mail.inboxId,
       subject,
       text,
@@ -57,7 +57,7 @@ export const sendStatus = query({
   args: { outboundId: v.string() },
   returns: v.any(),
   handler: async (ctx, args) => {
-    return await agentmail.status(ctx, args.outboundId as any);
+    return await agentmail().status(ctx, args.outboundId as any);
   },
 });
 
