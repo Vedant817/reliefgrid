@@ -310,7 +310,7 @@ This section overrides optimistic checkbox interpretations. A sponsor integratio
 
 ---
 
-## 12) Wow layer — prioritized, concrete, and demoable [18/35]
+## 12) Wow layer — prioritized, concrete, and demoable [36/47]
 
 The features below are not generic extras. Each creates a visible cause-and-effect moment using the sponsor stack. Do not start Tier B until all real sponsor cutover tasks in 11.1 pass.
 
@@ -326,32 +326,34 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | B2 | Counterfactual Lab | Explains why cheapest did not win without changing live state | Ship if A tiers are stable |
 | B3 | Live coordinator presence | Shows collaboration, but adds less product value than evidence drift | Optional |
 
-### 11.1 Real sponsor cutover [4/8]
+### 11.1 Real sponsor cutover [5/9]
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
 | 11.1.1 | Replace extraction mock with OpenAI structured output | A real EN email and a real ES email produce schema-valid offers; model and request ID stored without prompt/private body | `convex/actions/extract.ts`, `convex/lib/extractOffer.ts` | [ ] |
-| 11.1.2 | Replace source-check mock with Firecrawl scrape | Real public page returns URL, title, relevant quote, retrieval time, and provider job/request ID | `convex/actions/verify.ts` | [ ] |
+| 11.1.2 | Replace source-check mock with Firecrawl scrape | Component v2 scrape of a real public page stores title + excerpt as source-check quote with live ledger evidence | `convex/lib/firecrawl.ts`, `convex/actions/verify.ts` | [x] |
 | 11.1.3 | Create one real AgentMail inbox per Need | Inbox ID stored in Convex; address never printed to `hackathon.md` or public audit | `convex/lib/agentmail.ts` | [ ] |
 | 11.1.4 | Prove send -> reply -> signed webhook -> offer version | Controlled inbox receives RFQ; reply creates exactly one offer version; duplicate webhook remains idempotent | `convex/http.ts`, `convex/actions/sendRfq.ts` | [ ] |
 | 11.1.5 | Add provider execution ledger | UI shows safe status, latency, timestamp, and provider request ID for OpenAI/Firecrawl/AgentMail; never secrets/content | `convex/schema.ts`, `src/components/ProviderProof.tsx` | [x] |
 | 11.1.6 | Add free Groq live-only lane | Extraction + clarification require a live model; failures throw after recording failed runs; ambiguous mail still abstains via nulls | `convex/lib/llm.ts`, `convex/actions/extract.ts`, `convex/actions/clarify.ts`, `convex/health.ts` | [x] |
 | 11.1.7 | Add live AgentMail RFQ + clarification send lane | Real sends through scoped inbox with thread/message IDs stored; idempotent RFQ re-send; approval-gated clarification send; ledger records live | `convex/lib/agentmail.ts`, `convex/actions/sendRfq.ts`, `convex/actions/clarify.ts`, `convex/rfq.ts` | [x] |
-| 11.1.8 | Add Firecrawl live-only scrape lane | Real v1 scrape stores title + excerpt as source-check quote; missing keys and provider errors throw after recording failed runs | `convex/lib/firecrawl.ts`, `convex/actions/verify.ts` | [x] |
+| 11.1.8 | Add Firecrawl live-only scrape lane | Component v2 scrape stores title + excerpt as source-check quote; missing keys and provider errors throw after recording failed runs | `convex/lib/firecrawl.ts`, `convex/actions/verify.ts` | [x] |
+| 11.1.9 | Register inbound webhook + prove reply loop | Console webhook registered, secret set, supplier reply creates exactly one offer version via verified ingest | `convex/http.ts`, `convex/email.ts` | [ ] |
 
-### 11.2 Evidence Drift / Source Flip [0/5] — hero feature
+### 11.2 Evidence Drift / Source Flip [4/6] — hero feature
 
 **Demo contract:** Apex is selected at 70 units. A controlled manufacturer bulletin changes to `RECALL ACTIVE`. Firecrawl re-scrapes it. Convex marks the source stale/failed, supersedes the plan, and streams a shortfall. OpenAI explains the change. AgentMail drafts (but does not automatically send) a hold notice.
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
-| 11.2.1 | Add controlled public manufacturer bulletin | Public route renders stable `CLEAR` state and can switch to `RECALL ACTIVE` using a guarded demo mutation | `src/pages/DemoBulletin.tsx`, `convex/demo.ts` | [ ] |
+| 11.2.1 | Add controlled public manufacturer bulletin | Public route renders stable `CLEAR` state and can switch to `RECALL ACTIVE` using a guarded demo mutation | `src/pages/DemoBulletin.tsx`, `convex/demo.ts` | [x] |
 | 11.2.2 | Add Firecrawl recheck action | Actual Firecrawl scrape reads the public bulletin after each state change and stores content hash + quote | `convex/actions/recheckSource.ts` | [ ] |
-| 11.2.3 | Invalidate affected offer and active plan | `sourceChecks: verified -> failed`; offer becomes ineligible; active plan becomes `superseded` in one durable workflow | `convex/sourceChecks.ts`, `convex/workflows.ts` | [ ] |
+| 11.2.3 | Invalidate affected offer and active plan | `sourceChecks: verified -> failed`; offer becomes ineligible; active plan becomes `superseded` in one durable workflow | `convex/sourceChecks.ts`, `convex/workflows.ts` | [x] |
 | 11.2.4 | Stream recovery to every client | Two browser sessions show `100/100 -> 30/100 shortfall -> replacement plan` without refresh or polling | `src/components/IncidentBoard.tsx` | [ ] |
-| 11.2.5 | Draft hold notice through AgentMail | Human sees cited reason and approves before send; no autonomous purchasing or cancellation | `convex/actions/awards.ts`, `src/components/HoldNotice.tsx` | [ ] |
+| 11.2.5 | Draft hold notice through AgentMail | Human sees cited reason and approves before send; no autonomous purchasing or cancellation | `convex/actions/awards.ts`, `src/components/HoldNotice.tsx` | [x] |
+| 11.2.6 | Guided recovery as durable workflow | Invalidate -> draft -> human gate (pauses free) -> replace -> recompute completes with status UI | `convex/recoveryWorkflow.ts`, `src/components/EvidenceDrift.tsx` | [x] |
 
-### 11.3 AI abstention + targeted clarification [2/4]
+### 11.3 AI abstention + targeted clarification [3/4]
 
 **Demo input:** `We should be able to do around fifty, maybe near five.` The system must not convert this into a trusted offer.
 
@@ -359,7 +361,7 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 |----|-------------|------------------|-------|--------|
 | 11.3.1 | Add field-level confidence and evidence spans | Quantity, price, arrival, and cert each include confidence + source text offsets | `convex/lib/extractOffer.ts`, schema | [x] |
 | 11.3.2 | Block ambiguous offers from allocator | Missing price/deadline/cert or confidence below threshold yields `needs_review`, never eligible | `convex/lib/allocate.ts` | [x] |
-| 11.3.3 | Generate one precise clarification | OpenAI asks only unresolved fields (e.g. exact qty and arrival date), not a generic follow-up | `convex/actions/clarify.ts` | [ ] |
+| 11.3.3 | Generate one precise clarification | Live model asks only unresolved fields (e.g. exact qty and arrival date), not a generic follow-up | `convex/actions/clarify.ts` | [x] |
 | 11.3.4 | Send clarification after approval and merge reply | AgentMail thread reply creates a new version; old version remains replayable | `convex/actions/sendClarification.ts` | [ ] |
 
 ### 11.4 Judge Mode [4/4]
@@ -390,15 +392,30 @@ The features below are not generic extras. Each creates a visible cause-and-effe
 | 11.6.3 | Add non-mutating what-if controls | Relax deadline by 16h -> BlueRiver wins and savings display; live plan remains unchanged | `src/components/CounterfactualLab.tsx` | [x] |
 | 11.6.4 | Test zero side effects | Counterfactual query leaves plans, approvals, threads, and audit count unchanged | `convex/allocate.test.ts` | [x] |
 
-### 11.7 Realtime collaboration presence [0/5] — optional
+### 11.7 Realtime collaboration presence [3/5] — optional
 
 | ID | Atomic task | Acceptance proof | Files | Status |
 |----|-------------|------------------|-------|--------|
-| 11.7.1 | Add coordinator session identity | Anonymous judge receives random session alias, no PII | `src/lib/session.ts` | [ ] |
-| 11.7.2 | Add presence heartbeat | Active coordinators appear/disappear within bounded timeout | `convex/presence.ts` | [ ] |
+| 11.7.1 | Add coordinator session identity | Anonymous judge receives random session alias, no PII | `src/lib/session.ts` | [x] |
+| 11.7.2 | Add presence heartbeat | Active coordinators appear/disappear within bounded timeout | `convex/presence.ts` | [x] |
 | 11.7.3 | Show who is reviewing an offer | Offer row shows `Coordinator 2 reviewing` live | `src/components/OfferMatrix.tsx` | [ ] |
-| 11.7.4 | Prevent conflicting approvals | Atomic mutation rejects approval after plan is superseded/approved | `convex/allocations.ts` | [ ] |
+| 11.7.4 | Prevent conflicting approvals | Atomic mutation rejects approval after plan is superseded/approved | `convex/allocations.ts` | [x] |
 | 11.7.5 | Verify two-browser concurrency | Playwright two contexts prove presence + single-winner approval | `e2e/realtime.spec.ts` | [ ] |
+
+### 11.8 Platform depth — full Convex use [9/10]
+
+| ID | Atomic task | Acceptance proof | Files | Status |
+|----|-------------|------------------|-------|--------|
+| 11.8.1 | Anonymous auth, server-derived identity | Browser signs in with zero friction; approvals carry the session subject, never the client string | `convex/auth.ts`, `convex/auth.config.ts`, `src/main.tsx` | [x] |
+| 11.8.2 | Rate-limit every billable lane | Fixed-window guards on extract/verify/send/clarify/hold-notice keyed per record | `convex/rateLimits.ts` | [x] |
+| 11.8.3 | Live coverage aggregates | Per-need offer count + quoted units in O(1), maintained on every write, backfilled once | `convex/offerTotals.ts` | [x] |
+| 11.8.4 | Full-text search | Indexed search over incidents, needs, suppliers with result caps | `convex/search.ts` | [x] |
+| 11.8.5 | Cert evidence in storage | Upload → storage ID → signed URL round trip; tables never store external URLs | `convex/attachments.ts` | [x] |
+| 11.8.6 | Deadline watchdog + digest | Hourly cron escalates at-risk needs to audit and schedules one digest email | `convex/watchdog.ts`, `convex/crons.ts`, `convex/actions/notify.ts` | [x] |
+| 11.8.7 | Paginated provider runs | Run ledger pages on demand instead of unbounded reads | `convex/health.ts`, `src/components/ProviderProof.tsx` | [x] |
+| 11.8.8 | Coordinator agent with tools | Agent answers coverage/search/what-if/timeline/semantics questions from live data in chat UI | `convex/coordinator.ts`, `src/components/CoordinatorChat.tsx` | [x] |
+| 11.8.9 | Integration tests on transactions | Approval guards, validators, replay, forged identity, enum rejection proven in-memory | `convex/hardening.test.ts` | [x] |
+| 11.8.10 | Vector search over offer bodies | 768-dim index + backfill + semantic supplier search live | `convex/embeddings.ts` | [ ] |
 
 ---
 
