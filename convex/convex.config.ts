@@ -17,6 +17,10 @@ const app = defineApp({
 app.use(rateLimiter, { name: "rateLimiter" });
 app.use(aggregate, { name: "aggregate" });
 app.use(presence, { name: "presence" });
+// Note: @agentmail/convex v0.1.0 declares no component env, so its send
+// workpool cannot see deployment keys. Sends stay on our proven direct lane
+// (actions/sendRfq); the component is wired for Svix-verified inbound ingest
+// and reactive thread state, whose webhook secret is passed explicitly.
 app.use(agentmail);
 app.use(workflow);
 app.use(agent);

@@ -158,7 +158,7 @@ describe("thread status enum", () => {
     await t.mutation(api.rfq.createRfqThreadsForNeed, { needId, supplierIds: [suppliers[0]._id] });
     const threads: any[] = await t.query(api.rfq.listThreadsByNeed, { needId });
     await expect(
-      t.mutation(api.rfq.updateThreadStatus, { threadId: threads[0]._id, status: "hacked" }),
+      t.mutation(api.rfq.updateThreadStatus, { threadId: threads[0]._id, status: "hacked" as any }),
     ).rejects.toThrow();
   });
 });
