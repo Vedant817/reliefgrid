@@ -1,7 +1,21 @@
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
+import usePresence from "@convex-dev/presence/react";
 import { api } from "../../convex/_generated/api";
 import { formatCents, formatDate } from "../lib/format";
+import { getSessionAlias } from "../lib/session";
+
+function ReviewingNow({ needId }: { needId: any }) {
+  const alias = getSessionAlias();
+  const state = usePresence(api.presence, `need-${needId}`, `${alias}-review`);
+  const others = (state ?? []).filter((p: any) => !String(p.userId ?? "").startsWith(alias));
+  if (!others.length) return null;
+  return (
+    <span className="text-[11px] px-2 py-1 rounded-full border border-violet-400/20 bg-violet-400/10 text-violet-300">
+      {others.length} reviewing
+    </span>
+  );
+}
 
 function EvidenceAttach({ offerId }: { offerId: any }) {
   const attachments: any = useQuery(api.attachments.listAttachmentsByOffer, { offerId }) ?? [];
@@ -93,7 +107,10 @@ export function OfferMatrix({ offers, activeNeed }: any) {
     <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] overflow-hidden">
       <div className="px-4 py-3 border-b border-[#1e2d4a] flex items-center justify-between">
         <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Live Offer Matrix</div>
-        <span className="text-xs mono text-slate-400">{offers.length} offers · {coverage?.totalQty ?? "?"} units quoted · realtime</span>
+        <span className="text-xs mono text-slate-400 flex items-center gap-2">
+          {offers.length} offers · {coverage?.totalQty ?? "?"} units quoted · realtime
+          {activeNeed && <ReviewingNow needId={activeNeed._id} />}
+        </span>
       </div>
 
       <div className="divide-y divide-[#1e2d4a]">

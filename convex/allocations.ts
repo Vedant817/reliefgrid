@@ -200,22 +200,25 @@ export const approvePlan = mutation({
     if (!need) throw new Error("Need not found");
     await ctx.db.patch(args.planId, { status: "approved" });
     const approvedAt = Date.now();
-    await ctx.db.insert("approvals", {
-      planId: args.planId,
-      approvedBy: approver,
-      approvedAt,
-      notes: args.notes,
-    });
     // Single-award invariant: approving this plan retires every other live plan.
     const siblings = await ctx.db
       .query("allocationPlans")
       .withIndex("by_need", (q) => q.eq("needId", plan.needId))
       .collect();
+    const replacedPlanIds = [];
     for (const sibling of siblings) {
       if (sibling._id !== args.planId && sibling.status !== "superseded") {
         await ctx.db.patch(sibling._id, { status: "superseded" });
+        replacedPlanIds.push(sibling._id);
       }
     }
+    await ctx.db.insert("approvals", {
+      planId: args.planId,
+      approvedBy: approver,
+      approvedAt,
+      notes: args.notes,
+      replacedPlanIds,
+    });
     // Update need to awarded
     await ctx.db.patch(plan.needId, { status: "awarded" });
     const approvedLines = await ctx.db

@@ -158,6 +158,7 @@ export default defineSchema({
     approvedBy: v.string(),
     approvedAt: v.number(),
     notes: v.optional(v.string()),
+    replacedPlanIds: v.optional(v.array(v.id("allocationPlans"))),
   }).index("by_plan", ["planId"]),
 
   deliveries: defineTable({
