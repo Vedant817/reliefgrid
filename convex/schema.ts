@@ -47,6 +47,7 @@ export default defineSchema({
     partialAllowed: v.boolean(),
     status: v.string(),
     createdAt: v.number(),
+    lastEscalatedAt: v.optional(v.number()), // watchdog dedup marker, set when a deadline escalation is recorded
     unit: v.optional(v.string()),
     deliveryLocation: v.optional(v.string()),
     timezone: v.optional(v.string()),

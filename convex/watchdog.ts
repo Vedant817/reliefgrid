@@ -3,8 +3,9 @@ import { internalMutation } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
 
 // Deadline watchdog, run hourly by cron. Finds needs due within two hours
-// that still have no feasible cover, writes a tamper-evident escalation
-// audit per need. Tenant data is not sent to a deployment-global mailbox.
+// that still have no feasible cover and writes a tamper-evident escalation
+// audit per need. Tenant data is never emailed anywhere: escalation ends at
+// the audit trail, which the workspace surfaces.
 export const checkDeadlines = internalMutation({
   args: {},
   returns: v.object({ atRisk: v.number() }),
@@ -20,20 +21,12 @@ export const checkDeadlines = internalMutation({
       .withIndex("by_status", (q) => q.eq("status", "awaiting_responses"))
       .take(100);
     const atRisk = [...candidates, ...awaiting].filter((need) => need.deadlineAt < horizon);
-    // Dedup: skip needs escalated within the last 12h so a stuck need
-    // produces one digest per half-day, not one per hour.
+    // Dedup on the need row itself, not an audit scan: a stuck need
+    // escalates at most once per half-day however many hourly ticks fire.
     const since = now - 12 * 60 * 60 * 1000;
-    const fresh: typeof atRisk = [];
-    for (const need of atRisk) {
-      const recent = await ctx.db
-        .query("auditEvents")
-        .withIndex("by_entity", (q) => q.eq("entity", "needs").eq("entityId", need._id))
-        .order("desc")
-        .take(10);
-      if (recent.some((e) => e.action === "deadline_escalation" && e.at > since)) continue;
-      fresh.push(need);
-    }
+    const fresh = atRisk.filter((need) => (need.lastEscalatedAt ?? 0) <= since);
     for (const need of fresh) {
+      await ctx.db.patch(need._id, { lastEscalatedAt: now });
       await writeAudit(ctx, {
         entity: "needs",
         entityId: need._id,

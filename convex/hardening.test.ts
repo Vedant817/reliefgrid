@@ -1,6 +1,7 @@
 import { convexTest } from "convex-test";
 import { describe, expect, test } from "vitest";
 import { api, internal } from "./_generated/api";
+import { buildDriftSnapshot } from "./lib/drift";
 import schema from "./schema";
 import aggregate from "@convex-dev/aggregate/test";
 
@@ -505,5 +506,209 @@ describe("authorization and decision integrity", () => {
       updatedAt: expect.any(Number),
     });
     expect(publicBulletin.ownerId).toBeUndefined();
+  });
+
+  test("replacement stock is idempotent across demo and workflow entries", async () => {
+    const t = asUser(makeT());
+    const { needId } = await t.mutation(api.demo.resetDemo, {});
+    await t.mutation(api.evidenceDrift.addReplacementOffer, { needId });
+    await t.mutation(api.evidenceDrift.addReplacementOffer, { needId });
+    const second: any = await t.mutation(internal.recoveryWorkflow.createReplacement, { needId });
+    expect(second.created).toBe(false);
+    const offers: any[] = await t.query(api.offers.listOffersByNeed, { needId });
+    const deltas = offers.filter((o) => o.rawEmailId === "demo-replacement" || o.rawEmailId === "workflow-replacement");
+    expect(deltas).toHaveLength(1);
+  });
+
+  test("demo reset purges the full incident graph without orphans", async () => {
+    const t = asUser(makeT());
+    const first: any = await t.mutation(api.demo.resetDemo, {});
+    await t.mutation(internal.evidenceDrift.setBulletinRecall, { needId: first.needId });
+    await t.mutation(internal.evidenceDrift.applyVerifiedRecall, {
+      needId: first.needId, sourceUrl: "https://example.com/bulletin",
+      quote: "RECALL ACTIVE", contentHash: "h",
+    });
+    await t.mutation(api.evidenceDrift.addReplacementOffer, { needId: first.needId });
+    const plans: any = await t.query(api.allocations.listAllocationPlans, { needId: first.needId });
+    await t.mutation(api.allocations.approvePlan, { planId: plans[0]._id });
+    const second: any = await t.mutation(api.demo.resetDemo, {});
+    expect(await t.query(api.needs.listNeedsByIncident, { incidentId: second.incidentId })).toHaveLength(1);
+    expect(await t.query(api.offers.listOffersByNeed, { needId: second.needId })).toHaveLength(3);
+    expect(await t.query(api.offers.listOfferVersions, { needId: second.needId })).toHaveLength(3);
+    expect(await t.query(api.sourceChecks.listSourceChecksByNeed, { needId: second.needId })).toHaveLength(3);
+    expect(await t.query(api.rfq.listThreadsByNeed, { needId: second.needId })).toHaveLength(3);
+    const freshPlans: any = await t.query(api.allocations.listAllocationPlans, { needId: second.needId });
+    expect(freshPlans).toHaveLength(1);
+    expect(freshPlans[0].approval).toBeNull();
+    const state: any = await t.query(api.evidenceDrift.getEvidenceDriftState, { needId: second.needId });
+    expect(state.holdNotice).toBeNull();
+    expect(state.bulletin?.state).toBe("CLEAR");
+  });
+
+  test("drift snapshots keep a stable envelope", () => {
+    expect(buildDriftSnapshot({
+      incident: { id: "i", title: "T" },
+      need: { id: "n", item: "X", qty: 1 },
+      plan: { id: "p", coverage: 1, costCents: 2, suppliers: ["S"] },
+    })).toBe('{"incident":{"id":"i","title":"T"},"need":{"id":"n","item":"X","qty":1},"plan":{"id":"p","coverage":1,"costCents":2,"suppliers":["S"]}}');
+  });
+
+  test("award notices move sending → sent → skipped, failed → sending", async () => {
+    const t = asUser(makeT(), "award-owner", "Award Owner");
+    const { needId } = await seedNeed(t);
+    const suppliers: any[] = await seedSuppliers(t);
+    await t.mutation(api.rfq.createRfqThreadsForNeed, { needId, supplierIds: [suppliers[0]._id, suppliers[1]._id] });
+    const threads: any[] = await t.query(api.rfq.listThreadsByNeed, { needId });
+    await t.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId: suppliers[0]._id, qty: 100, unitPriceCents: 1000, arrivalAt: Date.now() + 60 * 60 * 1000,
+      certStatus: "verified", conditions: [], confidence: 0.98,
+      rawEmailId: "award-1", rawBody: "100 units", language: "en",
+    });
+    const computed: any = await t.mutation(api.allocations.computeAllocation, { needId });
+
+    const first: any = await t.mutation(internal.awardNotices.claimNotice, {
+      planId: computed.planId, threadId: threads[0]._id, kind: "award", demo: false,
+    });
+    expect(first.shouldSend).toBe(true);
+    expect(first.shouldReconcile).toBe(false);
+    const retry: any = await t.mutation(internal.awardNotices.claimNotice, {
+      planId: computed.planId, threadId: threads[0]._id, kind: "award", demo: false,
+    });
+    expect(retry.shouldSend).toBe(false);
+    expect(retry.shouldReconcile).toBe(true);
+    await t.mutation(internal.awardNotices.finishNotice, { noticeId: first.noticeId, status: "sent", messageId: "m-1" });
+    const done: any = await t.mutation(internal.awardNotices.claimNotice, {
+      planId: computed.planId, threadId: threads[0]._id, kind: "award", demo: false,
+    });
+    expect(done.shouldSend).toBe(false);
+    expect(done.shouldReconcile).toBe(false);
+
+    const decline: any = await t.mutation(internal.awardNotices.claimNotice, {
+      planId: computed.planId, threadId: threads[1]._id, kind: "decline", demo: false,
+    });
+    expect(decline.shouldSend).toBe(true);
+    await t.mutation(internal.awardNotices.finishNotice, { noticeId: decline.noticeId, status: "failed", error: "provider 429" });
+    const retried: any = await t.mutation(internal.awardNotices.claimNotice, {
+      planId: computed.planId, threadId: threads[1]._id, kind: "decline", demo: false,
+    });
+    expect(retried.shouldSend).toBe(true);
+    expect(retried.shouldReconcile).toBe(false);
+
+    await t.mutation(api.allocations.approvePlan, { planId: computed.planId });
+    const dispatch: any = await t.query(internal.awardNotices.getDispatch, { planId: computed.planId });
+    expect(dispatch.ownerId).toContain("award-owner");
+    expect(dispatch.threads).toHaveLength(2);
+  });
+
+  test("need workspace joins offers, threads, plan, and coverage in canonical order", async () => {
+    const raw = makeT();
+    const owner = asUser(raw, "workspace-owner", "Workspace Owner");
+    const stranger = asUser(raw, "workspace-stranger", "Workspace Stranger");
+    const { needId } = await seedNeed(owner, { qty: 100 });
+    const suppliers: any[] = await seedSuppliers(owner);
+    await owner.mutation(api.rfq.createRfqThreadsForNeed, { needId, supplierIds: [suppliers[0]._id, suppliers[1]._id] });
+    const offerA: string = await owner.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId: suppliers[0]._id, qty: 100, unitPriceCents: 1100, arrivalAt: Date.now() + 60 * 60 * 1000,
+      certStatus: "verified", conditions: [], confidence: 0.97,
+      rawEmailId: "ws-a", rawBody: "100 units at eleven", language: "en",
+    });
+    await owner.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId: suppliers[1]._id, qty: 100, unitPriceCents: 900, arrivalAt: Date.now() + 60 * 60 * 1000,
+      certStatus: "needs_review", conditions: [], confidence: 0.5,
+      rawEmailId: "ws-b", rawBody: "100 units at nine", language: "en",
+    });
+    await owner.mutation(internal.sourceChecks.addSourceCheck, {
+      offerId: offerA,
+      url: "https://www.nsf.org/cert",
+      quote: "NSF/ANSI 53",
+      status: "verified",
+      reason: "authoritative exact match",
+      type: "cert",
+      claim: "NSF/ANSI 53",
+      sourceAuthority: "authoritative",
+      contentHash: "h",
+      matched: true,
+    });
+    const workspace: any = await owner.query(api.workspace.getNeedWorkspace, { needId });
+    expect(workspace.need._id).toBe(needId);
+    expect(workspace.offers.map((o: any) => o.unitPriceCents)).toEqual([1100, 900]);
+    expect(workspace.offers[0].isVerified).toBe(true);
+    expect(workspace.offers[0].ambiguous).toBe(false);
+    expect(workspace.offers[0].verified).toBe(true);
+    expect(workspace.offers[0].rawBody).toBe("100 units at eleven");
+    expect(workspace.offers[0].supplier.name).toBe(suppliers[0].name);
+    expect(workspace.offers[1].ambiguous).toBe(true);
+    expect(workspace.threads).toHaveLength(2);
+    expect(workspace.threads[0].supplier).toBeDefined();
+    expect(workspace.latestPlan).toBeNull();
+    expect(workspace.coverage).toMatchObject({ offerCount: 2, totalQty: 200 });
+    expect(workspace.verifiedOfferCount).toBe(1);
+    await expect(stranger.query(api.workspace.getNeedWorkspace, { needId })).rejects.toThrow(/not found/i);
+  });
+
+  test("deadline watchdog escalates once per half-day per need", async () => {
+    const t = asUser(makeT());
+    const incidentId = await t.mutation(api.incidents.createIncident, {
+      title: "Watch",
+      deadlineAt: Date.now() + 60 * 60 * 1000,
+    });
+    const needId = await t.mutation(api.needs.createNeed, {
+      incidentId,
+      item: "Filters",
+      qty: 100,
+      deadlineAt: Date.now() + 60 * 60 * 1000,
+      budgetCents: 120000,
+      partialAllowed: true,
+    });
+    const suppliers: any[] = await seedSuppliers(t);
+    await t.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId: suppliers[0]._id, qty: 100, unitPriceCents: 1000, arrivalAt: Date.now() + 30 * 60 * 1000,
+      certStatus: "needs_review", conditions: [], confidence: 0.5,
+      rawEmailId: "watch-1", rawBody: "vague quote", language: "en",
+    });
+    await t.mutation(api.allocations.computeAllocation, { needId });
+    const first: any = await t.mutation(internal.watchdog.checkDeadlines, {});
+    expect(first.atRisk).toBe(1);
+    const second: any = await t.mutation(internal.watchdog.checkDeadlines, {});
+    expect(second.atRisk).toBe(0);
+    const needs: any[] = await t.query(api.needs.listNeedsByIncident, { incidentId });
+    expect(typeof needs[0].lastEscalatedAt).toBe("number");
+  });
+
+  test("new terms supersede the live plan through the public seam", async () => {
+    const t = asUser(makeT());
+    const { needId } = await seedNeed(t, { qty: 100, budgetCents: 100000 });
+    const suppliers: any[] = await seedSuppliers(t);
+    const arrival = Date.now() + 60 * 60 * 1000;
+    await t.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId: suppliers[0]._id, qty: 100, unitPriceCents: 1000, arrivalAt: arrival,
+      certStatus: "verified", conditions: [], confidence: 0.98,
+      rawEmailId: "terms-1", rawBody: "100 units", language: "en",
+    });
+    const first: any = await t.mutation(api.allocations.computeAllocation, { needId });
+    expect(first.planId).not.toBeNull();
+    await t.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId: suppliers[1]._id, qty: 100, unitPriceCents: 800, arrivalAt: arrival,
+      certStatus: "verified", conditions: [], confidence: 0.98,
+      rawEmailId: "terms-2", rawBody: "100 cheaper units", language: "en",
+    });
+    const second: any = await t.mutation(api.allocations.computeAllocation, { needId });
+    expect(second.planId).not.toBe(first.planId);
+    expect(second.totalCostCents).toBe(80000);
+    const plans: any[] = await t.query(api.allocations.listAllocationPlans, { needId });
+    const byId = Object.fromEntries(plans.map((p) => [String(p._id), p.status]));
+    expect(byId[String(first.planId)]).toBe("superseded");
+    expect(byId[String(second.planId)]).toBe("proposed");
+  });
+
+  test("demo reset is per-owner isolated", async () => {
+    const raw = makeT();
+    const ownerA = asUser(raw, "iso-a", "Iso A");
+    const ownerB = asUser(raw, "iso-b", "Iso B");
+    const a: any = await ownerA.mutation(api.demo.resetDemo, {});
+    const b: any = await ownerB.mutation(api.demo.resetDemo, {});
+    expect(String(a.incidentId)).not.toBe(String(b.incidentId));
+    expect(await ownerA.query(api.needs.listNeedsByIncident, { incidentId: a.incidentId })).toHaveLength(1);
+    await expect(ownerA.query(api.needs.listNeedsByIncident, { incidentId: b.incidentId })).rejects.toThrow(/not found/i);
   });
 });
