@@ -2,11 +2,11 @@ import { useQuery, usePaginatedQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 
 const tone: Record<string, string> = {
-  live: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-  mock: "bg-slate-500/10 text-slate-300 border-slate-500/20",
-  degraded: "bg-amber-500/10 text-amber-300 border-amber-500/20",
-  not_configured: "bg-slate-500/10 text-slate-400 border-slate-500/20",
-  failed: "bg-red-500/10 text-red-300 border-red-500/20",
+  live: "border-ledger bg-[#eaf2ed] text-ledger",
+  mock: "border-hairline bg-paper text-soft",
+  degraded: "border-[#e7d9ae] bg-[#fbf7ea] text-[#7a5c14]",
+  not_configured: "border-hairline bg-paper text-soft",
+  failed: "border-seal bg-[#f9ece7] text-seal",
 };
 
 export function ProviderProof() {
@@ -18,39 +18,39 @@ export function ProviderProof() {
   );
 
   return (
-    <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] overflow-hidden">
-      <div className="px-4 py-3 border-b border-[#1e2d4a] flex items-center justify-between">
-        <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Integration health</div>
-        <span className="text-[11px] mono text-slate-500">safe proof only</span>
+    <div className="overflow-hidden rounded-[10px] border border-hairline bg-sheet">
+      <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+        <div className="eyebrow">Integration health</div>
+        <span className="text-[11px] tabular-nums text-soft">safe proof only</span>
       </div>
-      <div className="p-4 grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-2 p-4">
         {health.map((h: any) => (
-          <div key={h.provider} className="rounded-xl bg-[#1a2332] border border-[#1e2d4a] p-3">
+          <div key={h.provider} className="rounded-lg border border-hairline bg-paper p-3">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold capitalize">{h.provider}</span>
-              <span className={`text-[11px] px-2 py-0.5 rounded-full border ${tone[h.status] ?? tone.mock}`}>{h.status}</span>
+              <span className={`rounded-[4px] border px-2 py-0.5 text-[11px] font-semibold ${tone[h.status] ?? tone.mock}`}>{h.status}</span>
             </div>
-            <div className="text-[11px] text-slate-400 mt-1">{h.detail}</div>
+            <div className="mt-1 text-[11px] text-soft">{h.detail}</div>
             {h.lastRun?.requestId && (
-              <div className="text-[11px] mono text-slate-500 mt-1 truncate">req {h.lastRun.requestId} · {h.lastRun.latencyMs ?? "?"}ms</div>
+              <div className="mt-1 truncate text-[11px] tabular-nums text-soft">req {h.lastRun.requestId}, {h.lastRun.latencyMs ?? "?"}ms</div>
             )}
           </div>
         ))}
-        {!health.length && <div className="text-xs text-slate-500 col-span-2">Loading health…</div>}
+        {!health.length && <div className="col-span-2 text-xs text-soft">Loading health…</div>}
       </div>
       {runs.length > 0 && (
         <div className="px-4 pb-4">
-          <div className="text-[11px] tracking-[0.14em] uppercase text-slate-500">Recent runs</div>
+          <div className="text-[11px] font-semibold text-soft">Recent runs</div>
           <div className="mt-2 space-y-1">
             {runs.map((r: any) => (
-              <div key={r._id} className="text-[11px] mono text-slate-400 flex justify-between gap-2">
-                <span>{r.provider}/{r.operation} · {r.status}</span>
+              <div key={r._id} className="flex justify-between gap-2 text-[11px] tabular-nums text-soft">
+                <span>{r.provider}/{r.operation}, {r.status}</span>
                 <span>{r.latencyMs ?? "?"}ms</span>
               </div>
             ))}
           </div>
           {status === "CanLoadMore" && (
-            <button onClick={() => loadMore(6)} className="mt-2 text-[11px] text-cyan-300 underline underline-offset-4">
+            <button onClick={() => loadMore(6)} className="mt-2 text-[11px] font-medium text-ledger underline underline-offset-4">
               Load more runs
             </button>
           )}

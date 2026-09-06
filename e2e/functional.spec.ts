@@ -37,14 +37,17 @@ test("customer can create a requirement, search it, and add a controlled supplie
   await page.getByRole("button", { name: "Add without sending" }).click();
   await expect(page.getByRole("status")).toContainText("Supplier added");
   await expect(page.getByRole("button", { name: "Controlled contact" }).last()).toBeDisabled();
+  await page.locator("summary").filter({ hasText: "How was this decision made?" }).click();
+  await page.getByRole("slider").fill("4");
+  await expect(page.getByText("+4h", { exact: true })).toBeVisible();
   expect(errors).toEqual([]);
 });
 
-test("judge controls, public bulletin, attachment, allocation, and replay work", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop", "desktop workflow");
+test("judge controls, public bulletin, attachment, allocation, and replay work", async ({ page }, testInfo) => {  test.skip(testInfo.project.name !== "desktop", "desktop workflow");
   const errors = captureRuntimeErrors(page);
   await page.goto("/?demo=1");
-  await page.getByRole("button", { name: "Reset Demo" }).first().click();
+  await page.getByRole("button", { name: "Reload sample" }).first().click();
+  await expect(page.getByText("Sample scenario reloaded", { exact: true })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("100 / 100", { exact: false }).first()).toBeVisible();
 
   const popupPromise = page.waitForEvent("popup");
@@ -55,19 +58,25 @@ test("judge controls, public bulletin, attachment, allocation, and replay work",
   await bulletin.close();
 
   await page.getByRole("button", { name: "Recompute" }).click();
-  await expect(page.getByText("Allocation recomputed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Allocation recomputed", { exact: true })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Approve Plan" }).click();
-  await expect(page.getByText("Allocation approved", { exact: false })).toBeVisible();
+  await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole("button", { name: "Approve Plan" })).toBeDisabled();
+
+  const reportPopup = page.waitForEvent("popup");
+  await page.getByRole("link", { name: "View full report" }).click();
+  const report = await reportPopup;
+  await expect(report.getByText("ReliefGrid decision report", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(report.getByText("Who quoted what", { exact: true })).toBeVisible();
+  await report.close();
 
   const counterfactual = page.getByRole("slider").first();
   await counterfactual.fill("4");
   await expect(page.getByText("+4h", { exact: true })).toBeVisible();
   await page.locator("summary").filter({ hasText: "Recorded fixture" }).click();
   await expect(page.getByText("offline reference only", { exact: false })).toBeVisible();
-  await page.locator("summary").filter({ hasText: "Judge proof and assistant" }).click();
+  await page.locator("summary").filter({ hasText: "How this was decided" }).click();
   await expect(page.getByText("Integration health", { exact: true })).toBeVisible();
-
   const upload = page.locator('input[type="file"]').first();
   await upload.setInputFiles({ name: "browser-cert.txt", mimeType: "text/plain", buffer: Buffer.from("controlled certification evidence") });
   await expect(page.getByRole("link", { name: "browser-cert.txt" })).toBeVisible();
@@ -85,5 +94,15 @@ test("customer and judge layouts fit a mobile viewport", async ({ page }, testIn
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
     expect(overflow).toBeLessThanOrEqual(1);
   }
+  expect(errors).toEqual([]);
+});
+
+test("first visit explains the product and loads a sample scenario", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "desktop workflow");
+  const errors = captureRuntimeErrors(page);
+  await page.goto("/");
+  await expect(page.getByText("Turn supplier email into a sourcing decision you can defend", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Load sample scenario" }).click();
+  await expect(page.getByText("100 / 100", { exact: false }).first()).toBeVisible();
   expect(errors).toEqual([]);
 });

@@ -3,49 +3,81 @@
 @tailwind utilities;
 
 :root {
-  --bg: #0a0e1a;
-  --surface: #111827;
-  --surface-2: #1a2332;
-  --border: #1e2d4a;
-  --text: #e2e8f0;
-  --text-muted: #94a3b8;
-  --accent: #3b82f6;
-  --accent-2: #06b6d4;
-  --success: #10b981;
-  --warning: #f59e0b;
-  --danger: #ef4444;
+  color-scheme: light;
 }
 
 * {
-  font-family: "Space Grotesk", system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-.mono {
-  font-family: "JetBrains Mono", monospace;
+.serif-display {
+  font-family: Georgia, "Times New Roman", serif;
 }
 
 body {
-  background: var(--bg);
-  color: var(--text);
+  background: #f6f5f0;
+  color: #1c2530;
   margin: 0;
   min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 @layer components {
   .input-field {
-    @apply rounded-xl border border-[#29405f] bg-[#0f172a] px-3 py-2.5 text-sm text-slate-100 placeholder:text-slate-600 focus:border-cyan-400 focus:outline-none;
+    @apply w-full rounded-lg border border-[#d8d3c4] bg-white px-3 py-2 text-sm text-[#1c2530] placeholder:text-[#8a8fa0] focus:border-[#1e6b4e] focus:outline-none focus:ring-2 focus:ring-[#1e6b4e]/15;
+  }
+  .card {
+    @apply rounded-[10px] border border-[#e2ded2] bg-white;
+  }
+  .eyebrow {
+    @apply text-[13px] font-semibold text-[#1c2530];
+  }
+  .stamp {
+    @apply inline-flex items-center rounded-[4px] border-2 px-2 py-0.5 text-[11px] font-bold tracking-wide;
+  }
+  .meta-quiet {
+    @apply text-xs tabular-nums text-[#5b6672];
+  }
+}
+
+/* Approval seal: the one orchestrated motion. Static otherwise. */
+@media (prefers-reduced-motion: no-preference) {
+  .seal-in {
+    animation: seal-in 0.45s ease-out;
+  }
+  @keyframes seal-in {
+    from {
+      transform: scale(1.25);
+      opacity: 0;
+    }
+    to {
+      transform: scale(1);
+      opacity: 1;
+    }
   }
 }
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--surface);
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 3px;
+  background: #cfc9b8;
+  border-radius: 4px;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* Disabled actions read as inactive, not as calls to action. */
+button:disabled {
+  filter: saturate(0.35);
 }

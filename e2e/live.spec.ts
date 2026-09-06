@@ -8,7 +8,7 @@ test("Firecrawl evidence drift invalidates and recovers the live plan", async ({
   page.on("pageerror", (error) => errors.push(error.message));
 
   await page.goto("/?demo=1");
-  await page.getByRole("button", { name: "Reset Demo" }).first().click();
+  await page.getByRole("button", { name: "Reload sample" }).first().click();
   await expect(page.getByText("100 / 100", { exact: false }).first()).toBeVisible();
 
   await page.getByRole("button", { name: "Recheck changed source" }).click();
@@ -28,7 +28,7 @@ test("durable guided recovery waits for approval and restores coverage", async (
   page.on("pageerror", (error) => errors.push(error.message));
 
   await page.goto("/?demo=1");
-  await page.getByRole("button", { name: "Reset Demo" }).first().click();
+  await page.getByRole("button", { name: "Reload sample" }).first().click();
   await page.getByRole("button", { name: "Recheck changed source" }).click();
   await expect(page.getByText("30 / 100", { exact: false }).first()).toBeVisible({ timeout: 90_000 });
   await expect(page.getByRole("button", { name: "Approve & send hold notice" })).toBeDisabled();
@@ -39,6 +39,6 @@ test("durable guided recovery waits for approval and restores coverage", async (
   await expect(approve).toBeEnabled({ timeout: 30_000 });
   await approve.click();
   await expect(page.getByText("100 / 100", { exact: false }).first()).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/completed · 100 units/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/completed, 100 units recovered/)).toBeVisible({ timeout: 30_000 });
   expect(errors).toEqual([]);
 });

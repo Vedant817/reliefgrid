@@ -42,51 +42,51 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
   };
 
   return (
-    <section className={`rounded-2xl border overflow-hidden ${recalled ? "bg-red-950/30 border-red-500/40" : "bg-[#111827] border-[#1e2d4a]"}`}>
-      <div className="p-4 border-b border-inherit flex items-start justify-between gap-3">
+    <section className={`card overflow-hidden ${recalled ? "border-seal" : ""}`}>
+      <div className={`flex items-start justify-between gap-3 border-b p-4 ${recalled ? "border-[#edc4b6] bg-[#f9ece7]" : "border-hairline"}`}>
         <div>
-          <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Evidence drift</div>
-          <div className="font-semibold mt-1">NF-53 safety source</div>
+          <div className={`eyebrow ${recalled ? "text-seal" : ""}`}>Evidence drift</div>
+          <div className="mt-1 font-semibold">NF-53 safety source</div>
         </div>
-        <span className={`text-[11px] mono px-2 py-1 rounded-full border ${recalled ? "bg-red-500/20 border-red-400/30 text-red-200" : "bg-emerald-500/10 border-emerald-400/20 text-emerald-300"}`}>
+        <span className={`rounded-[4px] border-2 px-2 py-0.5 text-[11px] font-bold tabular-nums ${recalled ? "border-seal bg-seal text-white" : "border-ledger bg-[#eaf2ed] text-ledger"}`}>
           {bulletin?.state ?? "LOADING"}
         </span>
       </div>
       <div className="p-4">
-        <p className="text-xs text-slate-400 leading-relaxed">{bulletin?.body ?? "Waiting for demo bulletin."}</p>
-        <a href={bulletin ? `/demo-bulletin?id=${encodeURIComponent(String(bulletin._id))}` : undefined} target="_blank" rel="noreferrer" aria-disabled={!bulletin} className="inline-block mt-2 text-xs text-cyan-300 underline underline-offset-4 aria-disabled:opacity-40">Open controlled public bulletin</a>
+        <p className="text-xs leading-relaxed text-soft">{bulletin?.body ?? "Waiting for demo bulletin."}</p>
+        <a href={bulletin ? `/demo-bulletin?id=${encodeURIComponent(String(bulletin._id))}` : undefined} target="_blank" rel="noreferrer" aria-disabled={!bulletin} className="mt-2 inline-block text-xs font-medium text-ledger underline underline-offset-4 aria-disabled:opacity-40">Open controlled public bulletin</a>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <button disabled={!needId || recalled || Boolean(pending)} onClick={() => needId && void run("Evidence recheck", () => activateRecall({ needId }))} className="px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-200 text-xs font-semibold disabled:opacity-40">
+          <button disabled={!needId || recalled || Boolean(pending)} onClick={() => needId && void run("Evidence recheck", () => activateRecall({ needId }))} className="rounded-lg border border-seal bg-sheet px-3 py-2 text-xs font-medium text-seal hover:bg-[#f9ece7] disabled:opacity-40">
             {pending === "Evidence recheck" ? "Rechecking…" : "Recheck changed source"}
           </button>
-          <button disabled={!needId || !recalled || coverage >= target || Boolean(pending)} onClick={() => needId && void run("Replacement", () => addReplacement({ needId }))} className="px-3 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-xs font-semibold disabled:opacity-40">
+          <button disabled={!needId || !recalled || coverage >= target || Boolean(pending)} onClick={() => needId && void run("Replacement", () => addReplacement({ needId }))} className="rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep disabled:opacity-40">
             {pending === "Replacement" ? "Adding…" : "Add replacement"}
           </button>
         </div>
         {recalled && (
-          <div className="mt-3 rounded-xl bg-black/20 border border-red-400/20 p-3">
-            <div className="text-xs font-semibold text-red-200">Causal change: Apex invalidated</div>
-            <div className="text-[11px] mono text-slate-400 mt-1">Coverage {coverage}/{target} · plan recomputed transactionally</div>
+          <div className="mt-3 rounded-lg border border-[#edc4b6] bg-[#f9ece7] p-3">
+            <div className="text-xs font-semibold text-seal">Causal change: Apex invalidated</div>
+            <div className="mt-1 text-[11px] tabular-nums text-seal">Coverage {coverage}/{target}, plan recomputed transactionally</div>
           </div>
         )}
         {notice && (
-          <div className="mt-3 rounded-xl bg-[#0f172a] border border-[#1e2d4a] p-3">
-            <div className="text-[11px] tracking-[0.12em] uppercase text-amber-300">Hold notice · {notice.status}</div>
-            <div className="text-xs font-semibold mt-1">{notice.subject}</div>
-            <p className="text-[11px] text-slate-400 mt-1">{notice.body}</p>
+          <div className="mt-3 rounded-lg border border-[#e7d9ae] bg-[#fbf7ea] p-3">
+            <div className="text-[11px] font-semibold text-[#7a5c14]">Hold notice, {notice.status}</div>
+            <div className="mt-1 text-xs font-semibold">{notice.subject}</div>
+            <p className="mt-1 text-[11px] text-soft">{notice.body}</p>
             {notice.status === "draft" && (
-              <button disabled={!canSendHoldNotice || Boolean(pending)} onClick={() => void run("Hold notice", () => approveNotice({ noticeId: notice._id }))} className="mt-2 px-3 py-1.5 rounded-full bg-amber-400 text-[#171006] text-xs font-bold disabled:opacity-40">
+              <button disabled={!canSendHoldNotice || Boolean(pending)} onClick={() => void run("Hold notice", () => approveNotice({ noticeId: notice._id }))} className="mt-2 rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-paper hover:opacity-90 disabled:opacity-40">
                 {pending === "Hold notice" ? "Sending…" : "Approve & send hold notice"}
               </button>
             )}
-            {notice.status === "draft" && !canSendHoldNotice && <div className="mt-2 text-[10px] text-slate-500">Draft retained: delivery requires a real sent supplier thread.</div>}
+            {notice.status === "draft" && !canSendHoldNotice && <div className="mt-2 text-[10px] text-soft">Draft retained: delivery requires a real sent supplier thread.</div>}
           </div>
         )}
-        <div className="mt-3 text-[10px] text-slate-500 mono">Firecrawl reads the public Convex bulletin before the source check can invalidate the plan. Hold notices remain human-approved.</div>
-        <div className="mt-3 rounded-xl border border-violet-400/20 bg-violet-400/5 p-3">
+        <div className="mt-3 text-[10px] tabular-nums text-soft">Firecrawl reads the public Convex bulletin before the source check can invalidate the plan. Hold notices remain human-approved.</div>
+        <div className="mt-3 rounded-lg border border-hairline bg-paper p-3">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-[11px] tracking-[0.12em] uppercase text-violet-300">Guided recovery · durable workflow</div>
-            <span className="text-[10px] mono text-slate-500">{wfState}{wfStatus?.type === "completed" ? ` · ${wfStatus.result?.recoveredQty ?? "?"} units` : ""}</span>
+            <div className="text-[11px] font-semibold text-soft">Guided recovery, durable workflow</div>
+            <span className="text-[10px] tabular-nums text-soft">{wfState}{wfStatus?.type === "completed" ? `, ${wfStatus.result?.recoveredQty ?? "?"} units recovered` : ""}</span>
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button
@@ -97,21 +97,21 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
                   setWorkflowId(res.workflowId);
                 });
               }}
-              className="px-3 py-2 rounded-xl bg-violet-500/15 border border-violet-500/30 text-violet-200 text-xs font-semibold disabled:opacity-40"
+              className="rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep disabled:opacity-40"
             >
               Start guided recovery
             </button>
             <button
               disabled={!workflowId || !wfAwaiting || Boolean(pending)}
               onClick={() => workflowId && void run("Recovery approval", () => approveRecovery({ workflowId }))}
-              className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs font-semibold disabled:opacity-40"
+              className="rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep disabled:opacity-40"
             >
               Approve recovery
             </button>
           </div>
-          <div className="mt-2 text-[10px] mono text-slate-500">Steps retry and resume; approval pauses the run with zero resource use.</div>
+          <div className="mt-2 text-[10px] tabular-nums text-soft">Steps retry and resume; approval pauses the run with zero resource use.</div>
         </div>
-        {error && <div role="alert" className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">{error}</div>}
+        {error && <div role="alert" className="mt-3 rounded-lg border border-[#edc4b6] bg-[#f9ece7] p-3 text-xs text-seal">{error}</div>}
       </div>
     </section>
   );

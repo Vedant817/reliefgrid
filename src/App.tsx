@@ -14,6 +14,12 @@ import { CounterfactualLab } from "./components/CounterfactualLab";
 import { DecisionReplay, ReplayBoundary } from "./components/DecisionReplay";
 import { NewIncidentForm } from "./components/NewIncidentForm";
 import { SupplierOutreach } from "./components/SupplierOutreach";
+import { WelcomeHero } from "./components/WelcomeHero";
+import { PublicRecallCheck } from "./components/PublicRecallCheck";
+import { BasketSummary } from "./components/BasketSummary";
+import { DecisionReport } from "./pages/DecisionReport";
+import { formatDate, formatDeadline } from "./lib/format";
+import { countVerifiedOffers, nextStepForWorkspace } from "./lib/outreach";
 
 export default function App() {
   const demoMode = new URLSearchParams(window.location.search).get("demo") === "1";
@@ -69,6 +75,19 @@ export default function App() {
     activeNeed ? { needId: activeNeed._id } : "skip",
   ) ?? [];
 
+  const verifiedOfferCount = countVerifiedOffers(offers, sourceChecks);
+
+  // The coordinator's only question is "what do I do now?" — answered from
+  // live state by the outreach coordinator module.
+  const nextStep: string = nextStepForWorkspace({
+    hasNeed: Boolean(activeNeed),
+    threadCount: threads.length,
+    offerCount: offers.length,
+    verifiedCount: verifiedOfferCount,
+    hasPlan: Boolean(latestPlan),
+    planApproved: latestPlan?.status === "approved",
+  });
+
   const resetDemo = useMutation(api.demo.resetDemo);
   const createIncident = useMutation(api.incidents.createIncident);
   const createNeed = useMutation(api.needs.createNeed);
@@ -90,7 +109,7 @@ export default function App() {
       const res = await resetDemo({});
       if (res?.incidentId) setSelectedIncidentId(res.incidentId);
       if (res?.needId) setSelectedNeedId(res.needId);
-      showToast("Demo reset — canonical scenario restored");
+      showToast("Sample scenario reloaded");
     } catch (e: any) {
       showToast(e.message ?? "Reset failed");
     } finally {
@@ -101,24 +120,30 @@ export default function App() {
   const handleCreateRequirement = async (values: any) => {
     const deadlineAt = new Date(values.deadlineLocal).getTime();
     const incidentId: any = await createIncident({ title: values.title, description: values.description || undefined, deadlineAt });
-    const needId: any = await createNeed({
-      incidentId,
-      item: values.item,
-      qty: values.qty,
-      deadlineAt,
-      budgetCents: Math.round(values.budgetDollars * 100),
-      certRequired: values.certification || undefined,
-      evidenceKey: values.evidenceKey || undefined,
-      partialAllowed: true,
-      unit: "units",
-      deliveryLocation: values.deliveryLocation,
-      timezone: values.timezone,
-      currency: "USD",
-    });
+    let firstNeedId: any = null;
+    for (const line of values.items) {
+      const needId: any = await createNeed({
+        incidentId,
+        item: line.item,
+        qty: line.qty,
+        deadlineAt,
+        budgetCents: Math.round(line.budgetDollars * 100),
+        certRequired: values.certification || undefined,
+        evidenceKey: values.evidenceKey || undefined,
+        partialAllowed: true,
+        unit: "units",
+        deliveryLocation: values.deliveryLocation,
+        timezone: values.timezone,
+        currency: "USD",
+      });
+      firstNeedId ??= needId;
+    }
     setSelectedIncidentId(incidentId);
-    setSelectedNeedId(needId);
+    setSelectedNeedId(firstNeedId);
     setShowNewIncident(false);
-    showToast("Requirement created — add suppliers and approve outreach");
+    showToast(values.items.length > 1
+      ? `${values.items.length} requests created — add suppliers and approve outreach`
+      : "Requirement created — add suppliers and approve outreach");
   };
 
   const handleRecompute = async () => {
@@ -147,63 +172,60 @@ export default function App() {
     }
   };
 
-  const handleSimulateShortfall = async () => {
-    showToast("Shortfall simulation: edit offer via Convex dashboard or re-seed with varied qty");
-  };
-
   if (window.location.pathname === "/demo-bulletin") return <DemoBulletin />;
+  if (window.location.pathname === "/report") return <DecisionReport />;
 
   if (authError && !isAuthenticated) {
     return (
-      <div className="min-h-screen bg-[#0a0e1a] text-slate-300 grid place-items-center p-6 text-center">
-        <div>
-          <div className="font-semibold text-red-200">Secure workspace unavailable</div>
-          <div className="mt-2 max-w-md text-sm text-slate-400">{authError}</div>
-          <button onClick={() => setAuthError(null)} className="mt-4 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#0a0e1a]">Retry</button>
+      <div className="grid min-h-screen place-items-center bg-paper p-6 text-center">
+        <div className="card max-w-md p-8">
+          <div className="font-semibold text-seal">Secure workspace unavailable</div>
+          <div className="mt-2 max-w-md text-sm text-soft">{authError}</div>
+          <button onClick={() => setAuthError(null)} className="mt-4 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper hover:opacity-90">Retry</button>
         </div>
       </div>
     );
   }
   if (authLoading || !isAuthenticated) {
-    return <div className="min-h-screen bg-[#0a0e1a] text-slate-300 grid place-items-center">Starting a secure workspace…</div>;
+    return <div className="grid min-h-screen place-items-center bg-paper text-soft">Starting a secure workspace…</div>;
   }
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-slate-200">
+    <div className="min-h-screen bg-paper text-ink">
       {/* Header */}
-      <header className="sticky top-0 z-40 backdrop-blur-xl bg-[#0a0e1a]/80 border-b border-[#1e2d4a]">
-        <div className="max-w-[1600px] mx-auto px-4 lg:px-6 h-[64px] flex items-center justify-between gap-4">
+      <header className="sticky top-0 z-40 border-b border-hairline bg-sheet">
+        <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between gap-4 px-4 lg:px-6">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-400 flex items-center justify-center font-bold text-white text-[16px]">◈</div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ledger font-serif text-[18px] font-bold text-white">R</div>
             <div>
-              <div className="font-bold tracking-tight leading-none">ReliefGrid</div>
-              <div className="text-[11px] tracking-[0.14em] uppercase text-slate-400 -mt-0.5">Emergency Supply Coordinator</div>
+              <div className="font-serif text-[19px] font-bold leading-none tracking-tight">ReliefGrid</div>
+              <div className="mt-1 hidden text-xs text-soft sm:block">Turn supplier quote emails into a decision you can defend</div>
             </div>
-            <span className="hidden md:inline-flex ml-3 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-medium items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" /> LIVE
+            <span className="ml-3 hidden items-center gap-1.5 rounded-[4px] border border-hairline bg-sheet px-2 py-0.5 text-[11px] font-semibold text-ledger md:inline-flex">
+              <span className="h-1.5 w-1.5 rounded-full border border-ledger" /> Live
             </span>
           </div>
 
           <div className="flex items-center gap-2">
-            <span className="hidden lg:inline text-xs text-slate-400 mono">
-              {activeIncident ? `${needs.length} needs · ${offers.length} offers` : "No incident"}
+            <span className="hidden text-xs tabular-nums text-soft lg:inline">
+              {activeIncident ? `${needs.length} needs, ${offers.length} offers` : "No incident"}
             </span>
             <input
               value={incidentSearch}
               onChange={(e) => setIncidentSearch(e.target.value)}
               placeholder="Search incidents…"
-              className="hidden md:inline-block w-40 px-3 py-2 rounded-full bg-[#1a2332] border border-[#1e2d4a] text-xs placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/40"
+              className="hidden w-44 rounded-lg border border-hairline bg-paper px-3 py-1.5 text-xs placeholder:text-soft/70 focus:border-ledger focus:outline-none md:inline-block"
             />
             {demoMode && <button
               onClick={handleSeed}
               disabled={busy}
-              className="px-4 py-2 rounded-full bg-white text-[#0a0e1a] text-sm font-semibold hover:bg-slate-100 disabled:opacity-50"
+              className="rounded-lg border border-hairline bg-sheet px-4 py-2 text-sm font-medium text-ink hover:bg-paper disabled:opacity-50"
             >
-              {busy ? "..." : "Reset Demo"}
+              {busy ? "..." : "Reload sample"}
             </button>}
             <button
               onClick={() => setShowNewIncident(true)}
-              className="inline-flex px-3 md:px-4 py-2 rounded-full bg-[#1a2332] border border-[#1e2d4a] text-xs md:text-sm font-medium hover:bg-[#1e2d4a]"
+              className="inline-flex rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep md:px-4 md:text-sm"
             >
               New Incident
             </button>
@@ -212,52 +234,69 @@ export default function App() {
       </header>
 
       {/* Stats bar */}
-      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 pt-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
-            <div className="text-[11px] tracking-[0.14em] uppercase text-slate-400">Secured</div>
-            <div className="text-2xl font-bold mt-1">
+      <div className="mx-auto max-w-[1400px] px-4 pt-4 lg:px-6">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="card p-4">
+            <div className="eyebrow">Secured</div>
+            <div className="mt-1 font-serif text-[28px] font-bold tabular-nums leading-none">
               {activeNeed ? `${latestPlan ? latestPlan.totalQty : 0} / ${activeNeed.qty}` : "—"}
-              <span className="text-sm font-normal text-slate-400"> units</span>
+              <span className="ml-1 align-middle font-sans text-sm font-normal text-soft">units</span>
             </div>
-            <div className="mt-2 h-1.5 rounded-full bg-[#1e2d4a] overflow-hidden">
+            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e7e2d3]">
               <div
-                className="h-full bg-gradient-to-r from-blue-500 to-cyan-400"
+                className="h-full bg-ledger"
                 style={{ width: activeNeed && latestPlan ? `${Math.min(100, (latestPlan.totalQty / activeNeed.qty) * 100)}%` : "0%" }}
               />
             </div>
           </div>
-          <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
-            <div className="text-[11px] tracking-[0.14em] uppercase text-slate-400">Deadline</div>
-            <div className="text-lg font-semibold mt-1 mono">{activeNeed ? new Date(activeNeed.deadlineAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—"}</div>
-            <div className="text-xs text-amber-400 mt-1">{activeNeed ? (activeNeed.deadlineAt - Date.now() < 2 * 3600000 ? "Critical window" : "On track") : "No need"}</div>
+          <div className="card p-4">
+            <div className="eyebrow">Deadline</div>
+            <div className="mt-1 text-lg font-semibold tabular-nums" title={activeNeed ? new Date(activeNeed.deadlineAt).toString() : undefined}>{activeNeed ? (activeNeed.deadlineAt - Date.now() < 48 * 3600000 ? formatDeadline(activeNeed.deadlineAt) : formatDate(activeNeed.deadlineAt)) : "—"}</div>
+            <div className={`mt-1 text-xs ${activeNeed && activeNeed.deadlineAt - Date.now() < 2 * 3600000 ? "font-medium text-seal" : "text-soft"}`}>{activeNeed ? (activeNeed.deadlineAt - Date.now() < 2 * 3600000 ? "Critical window" : "On track") : "No need"}</div>
           </div>
-          <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
-            <div className="text-[11px] tracking-[0.14em] uppercase text-slate-400">Budget</div>
-            <div className="text-lg font-semibold mt-1">
-              {latestPlan ? `$${(latestPlan.totalCostCents / 100).toFixed(0)}` : "$0"} <span className="text-sm font-normal text-slate-400">/ ${activeNeed ? `$${(activeNeed.budgetCents / 100).toFixed(0)}` : "—"}</span>
+          <div className="card p-4">
+            <div className="eyebrow">Budget</div>
+            <div className="mt-1 text-lg font-semibold tabular-nums">
+              {latestPlan ? `$${(latestPlan.totalCostCents / 100).toFixed(0)}` : "$0"} <span className="text-sm font-normal text-soft">/ {activeNeed ? `$${(activeNeed.budgetCents / 100).toFixed(0)}` : "—"}</span>
             </div>
-            <div className="text-xs text-slate-400 mt-1">{latestPlan ? `${((latestPlan.totalCostCents / (activeNeed?.budgetCents ?? 1)) * 100).toFixed(0)}% utilized` : "No plan"}</div>
+            <div className="mt-1 text-xs text-soft">{latestPlan ? `${((latestPlan.totalCostCents / (activeNeed?.budgetCents ?? 1)) * 100).toFixed(0)}% utilized` : "No plan"}</div>
           </div>
-          <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
-            <div className="text-[11px] tracking-[0.14em] uppercase text-slate-400">Suppliers</div>
-            <div className="text-lg font-semibold mt-1">{threads.length} <span className="text-sm font-normal text-slate-400">contacted</span></div>
-            <div className="text-xs text-slate-400 mt-1">{offers.length} offers · {offers.filter((o: any) => o.certStatus === "verified").length} verified</div>
+          <div className="card p-4">
+            <div className="eyebrow">Suppliers</div>
+            <div className="mt-1 text-lg font-semibold tabular-nums">{threads.length} <span className="text-sm font-normal text-soft">contacted</span></div>
+            <div className="mt-1 text-xs text-soft">{offers.length} offers, {offers.filter((o: any) => o.certStatus === "verified").length} verified</div>
           </div>
         </div>
       </div>
 
       {/* Main grid */}
-      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
+      {incidents.length === 0 && (
+        <div className="mx-auto max-w-[1400px] px-4 pt-4 lg:px-6">
+          <WelcomeHero busy={busy} onLoadSample={() => void handleSeed()} onCreate={() => setShowNewIncident(true)} />
+        </div>
+      )}
+      {!demoMode && activeIncident && (
+        <div className="mx-auto max-w-[1400px] px-4 pt-4 lg:px-6">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border border-ledger/30 bg-[#eaf2ed] px-4 py-3">
+            <span className="text-sm font-semibold text-ledger-deep">Next:</span>
+            <span className="text-sm text-ink">{nextStep}</span>
+            {!activeNeed && (
+              <button onClick={() => setShowNewIncident(true)} className="rounded-lg bg-ledger px-3 py-1.5 text-xs font-medium text-white hover:bg-ledger-deep">
+                New requirement
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+      {activeIncident && <BasketSummary incidentId={activeIncident._id} />}
+      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-12 lg:px-6">
         {/* Left: Incident Board */}
-        <div className="lg:col-span-3 space-y-4">
+        <div className="space-y-4 lg:col-span-3">
           {demoMode && <DemoRail
             hasNeed={Boolean(activeNeed)}
             threadCount={threads.length}
             offerCount={offers.length}
-            verifiedOfferCount={offers.filter((offer: any) =>
-              sourceChecks.some((check: any) => check.offerId === offer._id && check.status === "verified"),
-            ).length}
+            verifiedOfferCount={verifiedOfferCount}
             planStatus={latestPlan?.status}
             busy={busy}
             onReset={handleSeed}
@@ -270,54 +309,71 @@ export default function App() {
             onSelectIncident={(id: string) => setSelectedIncidentId(id)}
             onSelectNeed={(id: string) => setSelectedNeedId(id)}
           />
-          {!demoMode && <SupplierOutreach needId={activeNeed?._id} suppliers={suppliers} threads={threads} />}
+          {!demoMode && <SupplierOutreach needId={activeNeed?._id} needs={needs} suppliers={suppliers} threads={threads} />}
+          {!demoMode && <PublicRecallCheck
+            needId={activeNeed?._id}
+            coverage={latestPlan?.totalQty ?? 0}
+            target={activeNeed?.qty ?? 0}
+          />}
           {demoMode && <EvidenceDrift
             needId={activeNeed?._id}
             coverage={latestPlan?.totalQty ?? 0}
             target={activeNeed?.qty ?? 0}
           />}
-          {demoMode && <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
-            <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Demo controls</div>
+          {demoMode && <div className="card p-4">
+            <div className="eyebrow">Demo controls</div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <button onClick={handleRecompute} disabled={!activeNeed || busy} className="px-3 py-2 rounded-xl bg-[#1a2332] border border-[#1e2d4a] text-xs font-medium disabled:opacity-50">
+              <button onClick={handleRecompute} disabled={!activeNeed || busy} className="rounded-lg border border-hairline bg-sheet px-3 py-2 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50">
                 Recompute
               </button>
-              <button onClick={handleApprove} disabled={!latestPlan || latestPlan.status === "approved" || busy} className="px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-semibold disabled:opacity-50">
+              <button onClick={handleApprove} disabled={!latestPlan || latestPlan.status === "approved" || busy} className="rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep disabled:opacity-50">
                 Approve Plan
               </button>
-              <button onClick={handleSimulateShortfall} className="col-span-2 px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-xs">
-                Simulate shortfall → new plan
-              </button>
             </div>
-            <div className="mt-3 text-[11px] leading-relaxed text-slate-500">Reset creates 3 synthetic offers: Apex 70 (EN), BlueRiver 100 late, Casa 30 (ES). Allocation picks 70+30. Extraction runs live via Groq, verification via Firecrawl, RFQ sends via AgentMail — ledger below proves each run.</div>
+            <div className="mt-3 text-[11px] leading-relaxed text-soft">Reset creates 3 synthetic offers: Apex 70 (EN), BlueRiver 100 late, Casa 30 (ES). Allocation picks 70+30. Extraction runs live via Groq, verification via Firecrawl, RFQ sends via AgentMail — ledger below proves each run.</div>
           </div>}
         </div>
 
         {/* Center: Offer Matrix */}
         <div className="lg:col-span-5">
-          <OfferMatrix offers={offers} activeNeed={activeNeed} />
+          {activeNeed ? (
+            <OfferMatrix offers={offers} activeNeed={activeNeed} />
+          ) : (
+            <div className="card p-6">
+              <div className="text-sm font-semibold">No request selected</div>
+              <div className="mt-1 text-sm text-soft">Create a requirement to start collecting comparable supplier quotes.</div>
+              <button onClick={() => setShowNewIncident(true)} className="mt-3 rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep">
+                Create requirement
+              </button>
+            </div>
+          )}
         </div>
 
         {/* Right: Allocation Inspector */}
-        <div className="lg:col-span-4 space-y-4">
-          <AllocationInspector plan={latestPlan} need={activeNeed} offers={offers} />
-          <AuditReceipt need={activeNeed} plan={latestPlan} />
-          <CounterfactualLab needId={activeNeed?._id} />
-          {demoMode && <details className="rounded-2xl bg-[#111827] border border-[#1e2d4a] overflow-hidden">
-            <summary className="cursor-pointer px-4 py-3 text-xs tracking-[0.14em] uppercase text-slate-400">Judge proof and assistant</summary>
-            <div className="p-3"><ProviderProof /></div>
+        <div className="space-y-4 lg:col-span-4">
+          {activeNeed && <AllocationInspector plan={latestPlan} need={activeNeed} offers={offers} />}
+          {latestPlan && <AuditReceipt need={activeNeed} plan={latestPlan} />}
+          {activeNeed && (demoMode ? <CounterfactualLab needId={activeNeed?._id} /> : (
+            <details className="card overflow-hidden">
+              <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-ink">How was this decision made?</summary>
+              <div className="border-t border-hairline p-3"><CounterfactualLab needId={activeNeed?._id} /></div>
+            </details>
+          ))}
+          {demoMode && <details className="card overflow-hidden">
+            <summary className="eyebrow cursor-pointer px-4 py-3">How this was decided</summary>
+            <div className="border-t border-hairline p-3"><ProviderProof /></div>
           </details>}
         </div>
       </div>
 
-      {demoMode && <div className="max-w-[1600px] mx-auto px-4 lg:px-6 pb-4">
+      {demoMode && <div className="mx-auto max-w-[1400px] px-4 pb-6 lg:px-6">
         <ReplayBoundary key={activeIncident?._id ?? "none"}>
           <DecisionReplay incidentId={activeIncident?._id} />
         </ReplayBoundary>
       </div>}
 
       {toast && (
-        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white text-[#0a0e1a] px-4 py-2 rounded-full text-sm font-medium shadow-xl">
+        <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper">
           {toast}
         </div>
       )}

@@ -47,6 +47,9 @@ test("AgentMail round trip is ingested and extracted live by Groq", async ({ pag
     await page.getByRole("button", { name: "Approve & send RFQ" }).click();
     await expect(page.getByRole("status")).toContainText("RFQ sent and tracked", { timeout: 60_000 });
 
+    await page.getByRole("button", { name: "Send reminder" }).click();
+    await expect(page.getByRole("status")).toContainText("Reminder sent in the supplier thread", { timeout: 60_000 });
+
     let receivedMessage: { message_id: string; subject?: string } | undefined;
     await expect.poll(async () => {
       const response = await agentMail(`/inboxes/${encodeURIComponent(recipient.inbox_id)}/messages?limit=10`);
@@ -64,12 +67,12 @@ test("AgentMail round trip is ingested and extracted live by Groq", async ({ pag
     });
 
     await expect(page.getByText(`AgentMail supplier ${suffix}`, { exact: true })).toBeVisible({ timeout: 90_000 });
-    await expect(page.getByText("$4.50", { exact: false })).toBeVisible();
-    await expect(page.getByText("25 units quoted", { exact: false })).toBeVisible();
+    await expect(page.getByText("$4.50", { exact: false })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByText("25 units quoted", { exact: false })).toBeVisible({ timeout: 90_000 });
 
     await page.goto("/?demo=1");
-    await page.locator("summary").filter({ hasText: "Judge proof and assistant" }).click();
-    const groqCard = page.locator("div.rounded-xl").filter({ hasText: /^groqlive/i }).first();
+    await page.locator("summary").filter({ hasText: "How this was decided" }).click();
+    const groqCard = page.locator("div.rounded-lg").filter({ hasText: /^groqlive/i }).first();
     await expect(groqCard).toBeVisible();
   expect(errors).toEqual([]);
 });

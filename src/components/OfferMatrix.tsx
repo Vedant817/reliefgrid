@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { formatCents, formatDate } from "../lib/format";
+import { formatCents, formatDate, humanizeStatus } from "../lib/format";
+import { offerFlags, sortOffersForMatrix } from "../lib/outreach";
 
 function EvidenceAttach({ offerId }: { offerId: any }) {
   const attachments: any = useQuery(api.attachments.listAttachmentsByOffer, { offerId }) ?? [];
@@ -31,7 +32,7 @@ function EvidenceAttach({ offerId }: { offerId: any }) {
   return (
     <div className="mt-2">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-[11px] px-2 py-1 rounded-full border border-slate-500/20 bg-slate-500/10 text-slate-300 cursor-pointer">
+        <label className="cursor-pointer rounded-md border border-hairline bg-sheet px-2 py-1 text-[11px] font-medium text-soft hover:bg-paper">
           {busy ? "Uploading…" : "+ Cert evidence"}
           <input type="file" aria-label="Attach certification evidence" className="hidden" disabled={busy} onChange={(event) => {
             const input = event.currentTarget;
@@ -39,7 +40,7 @@ function EvidenceAttach({ offerId }: { offerId: any }) {
           }} />
         </label>
         {attachments.map((a: any) => (
-          <span key={a._id} className="text-[11px] mono px-2 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-1">
+          <span key={a._id} className="flex items-center gap-1 rounded-md border border-hairline bg-paper px-2 py-1 text-[11px] tabular-nums text-soft">
             <a href={a.url ?? undefined} target="_blank" rel="noreferrer" className="underline underline-offset-2">{a.name}</a>
             <button
               aria-label={`Remove ${a.name}`}
@@ -51,24 +52,24 @@ function EvidenceAttach({ offerId }: { offerId: any }) {
                   .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not remove evidence"))
                   .finally(() => setBusy(false));
               }}
-              className="text-slate-500 disabled:opacity-40"
+              className="text-soft hover:text-ink disabled:opacity-40"
             >×</button>
           </span>
         ))}
       </div>
-      {error && <div role="alert" className="mt-2 text-[11px] text-red-300">{error}</div>}
+      {error && <div role="alert" className="mt-2 text-[11px] text-seal">{error}</div>}
     </div>
   );
 }
 
 function Badge({ children, tone }: any) {
   const map: any = {
-    verified: "bg-emerald-500/10 text-emerald-300 border-emerald-500/20",
-    late: "bg-red-500/10 text-red-300 border-red-500/20",
-    review: "bg-amber-500/10 text-amber-300 border-amber-500/20",
-    neutral: "bg-slate-500/10 text-slate-300 border-slate-500/20",
+    verified: "border-[#bfd9c9] bg-[#eaf2ed] text-ledger",
+    late: "border-[#edc4b6] bg-[#f9ece7] text-seal",
+    review: "border-[#e7d9ae] bg-[#fbf7ea] text-[#7a5c14]",
+    neutral: "border-hairline bg-paper text-soft",
   };
-  return <span className={`text-[11px] px-2 py-1 rounded-full border ${map[tone] ?? map.neutral}`}>{children}</span>;
+  return <span className={`rounded-[4px] border px-2 py-0.5 text-[11px] font-semibold ${map[tone] ?? map.neutral}`}>{children}</span>;
 }
 
 export function OfferMatrix({ offers, activeNeed }: any) {
@@ -86,57 +87,51 @@ export function OfferMatrix({ offers, activeNeed }: any) {
 
   if (!activeNeed) {
     return (
-      <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-6 text-sm text-slate-400">Select a need to view offers.</div>
+      <div className="card p-6 text-sm text-soft">Select a need to view offers.</div>
     );
   }
   if (!offers.length) {
     return (
-      <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-6">
+      <div className="card p-6">
         <div className="text-sm font-semibold">Live Offer Matrix</div>
-        <div className="text-sm text-slate-400 mt-1">No offers yet. Add a supplier and approve an RFQ to begin collecting comparable replies.</div>
+        <div className="mt-1 text-sm text-soft">No offers yet. Add a supplier and approve an RFQ to begin collecting comparable replies.</div>
       </div>
     );
   }
 
   // Sort: verified first, then price
-  const sorted = [...offers].sort((a, b) => {
-    const av = a.certStatus === "verified" ? 0 : 1;
-    const bv = b.certStatus === "verified" ? 0 : 1;
-    return av - bv || a.unitPriceCents - b.unitPriceCents;
-  });
+  const sorted = sortOffersForMatrix(offers);
 
   return (
-    <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] overflow-hidden">
-      <div className="px-4 py-3 border-b border-[#1e2d4a] flex items-center justify-between">
-        <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Live Offer Matrix</div>
-        <span className="text-xs mono text-slate-400 flex items-center gap-2">
-          {offers.length} offers · {coverage?.totalQty ?? "?"} units quoted · realtime
+    <div className="card overflow-hidden">
+      <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
+        <div className="eyebrow">Live Offer Matrix</div>
+        <span className="flex items-center gap-2 text-xs tabular-nums text-soft">
+          {offers.length} offers, {coverage?.totalQty ?? "?"} units quoted, realtime
         </span>
       </div>
 
-      <div className="divide-y divide-[#1e2d4a]">
+      <div className="divide-y divide-hairline">
         {sorted.map((o: any) => {
-          const isLate = activeNeed && o.arrivalAt > activeNeed.deadlineAt;
-          const isVerified = o.certStatus === "verified";
-          const ambiguous = o.certStatus === "needs_review" || o.confidence < 0.75;
+          const { isLate, isVerified, ambiguous } = offerFlags(o, activeNeed);
           return (
-            <div key={o._id} className="p-4 hover:bg-[#1a2332]/50">
+            <div key={o._id} className="p-4 hover:bg-paper">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <div className="font-semibold text-sm flex items-center gap-2">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
                     {o.supplier?.name ?? "Unknown supplier"}
-                    {o.language === "es" && <span className="text-[11px] px-1.5 py-0.5 rounded bg-blue-500 text-white">ES → EN</span>}
+                    {o.language === "es" && <span className="rounded bg-ledger px-1.5 py-0.5 text-[11px] font-medium text-white">ES/EN</span>}
                   </div>
-                  <div className="text-xs mono text-slate-400 mt-0.5">{o.supplier?.contactEmail ?? ""}</div>
+                  <div className="mt-0.5 text-xs tabular-nums text-soft">{o.supplier?.contactEmail ?? ""}</div>
                 </div>
                 <div className="text-right">
-                  <div className="font-bold">{formatCents(o.unitPriceCents)} <span className="font-normal text-slate-400 text-xs">× {o.qty}</span></div>
-                  <div className="text-xs text-slate-400">= {formatCents(o.qty * o.unitPriceCents)} total</div>
+                  <div className="font-bold tabular-nums">{formatCents(o.unitPriceCents)} <span className="text-xs font-normal text-soft">× {o.qty}</span></div>
+                  <div className="text-xs tabular-nums text-soft">= {formatCents(o.qty * o.unitPriceCents)} total</div>
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-wrap gap-2">
-                {isVerified ? <Badge tone="verified">NSF/ANSI 53 verified</Badge> : <Badge tone="review">Cert {o.certStatus}</Badge>}
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {isVerified ? <Badge tone="verified">NSF/ANSI 53 verified</Badge> : <Badge tone="review">{humanizeStatus(o.certStatus)}</Badge>}
                 {isLate ? <Badge tone="late">Late — {formatDate(o.arrivalAt)}</Badge> : <Badge tone="neutral">{formatDate(o.arrivalAt)}</Badge>}
                 <Badge tone={o.confidence > 0.9 ? "verified" : "review"}>{(o.confidence * 100).toFixed(0)}% confidence</Badge>
                 {o.conditions?.map((c: string, i: number) => (
@@ -145,9 +140,9 @@ export function OfferMatrix({ offers, activeNeed }: any) {
               </div>
 
               {o.fieldEvidence && (
-                <div className="mt-2 flex flex-wrap gap-2 text-[10px] mono text-slate-500">
+                <div className="mt-2 flex flex-wrap gap-2 text-[10px] tabular-nums text-soft">
                   {Object.entries(o.fieldEvidence).map(([field, evidence]: [string, any]) => (
-                    <span key={field} className={evidence.confidence < 0.75 ? "text-amber-300" : ""}>
+                    <span key={field} className={evidence.confidence < 0.75 ? "font-medium text-[#7a5c14]" : ""}>
                       {field} {Math.round(evidence.confidence * 100)}%
                     </span>
                   ))}
@@ -155,8 +150,8 @@ export function OfferMatrix({ offers, activeNeed }: any) {
               )}
 
               {ambiguous && (
-                <div className="mt-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3">
-                  <div className="text-xs font-semibold text-amber-200">Allocator abstained</div>
+                <div className="mt-3 rounded-lg border border-[#e7d9ae] bg-[#fbf7ea] p-3">
+                  <div className="text-xs font-semibold text-[#5c4a10]">Allocator abstained</div>
                   {!drafts[o._id] ? (
                     <button
                       onClick={async () => {
@@ -173,15 +168,15 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                         }
                       }}
                       disabled={pendingOffer === o._id}
-                      className="mt-2 px-3 py-1.5 rounded-full bg-amber-300 text-[#1c1505] text-xs font-bold disabled:opacity-50"
+                      className="mt-2 rounded-lg bg-ledger px-3 py-1.5 text-xs font-medium text-white hover:bg-ledger-deep disabled:opacity-50"
                     >
                       {pendingOffer === o._id ? "Drafting…" : "Draft targeted clarification"}
                     </button>
                   ) : (
                     <div className="mt-2">
-                      <p className="text-xs text-slate-300">{drafts[o._id]}</p>
+                      <p className="text-xs text-ink">{drafts[o._id]}</p>
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="text-[10px] mono text-slate-500">LLM: {draftStatus[o._id] ?? "live"}</span>
+                        <span className="text-[10px] tabular-nums text-soft">LLM: {draftStatus[o._id] ?? "live"}</span>
                         <button
                            disabled={sent[o._id] || pendingOffer === o._id}
                            onClick={async () => {
@@ -196,24 +191,24 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                                setPendingOffer(null);
                              }
                           }}
-                          className="px-3 py-1.5 rounded-full border border-amber-300/30 text-amber-200 text-xs disabled:opacity-50"
+                          className="rounded-lg border border-hairline bg-sheet px-3 py-1.5 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50"
                         >
-                          {sent[o._id] ? "Approved · sent" : "Approve & send"}
+                          {sent[o._id] ? "Approved, sent" : "Approve & send"}
                         </button>
                       </div>
                     </div>
                   )}
                 </div>
               )}
-              {clarificationError[o._id] && <div role="alert" className="mt-2 text-[11px] text-red-300">{clarificationError[o._id]}</div>}
+              {clarificationError[o._id] && <div role="alert" className="mt-2 text-[11px] text-seal">{clarificationError[o._id]}</div>}
 
-              <div className="mt-3 rounded-xl bg-[#0f172a] border border-[#1e2d4a] p-3">
-                <div className="text-xs tracking-[0.14em] uppercase text-slate-500">Extracted email</div>
-                <div className="text-sm text-slate-300 mt-1 leading-relaxed line-clamp-3">{o.rawBody ?? (o as any).rawBody ?? "—"}</div>
+              <div className="mt-3 rounded-lg border border-hairline bg-paper p-3">
+                <div className="eyebrow">Extracted email</div>
+                <div className="mt-1 text-sm leading-relaxed text-ink line-clamp-3">{o.rawBody ?? (o as any).rawBody ?? "—"}</div>
                 {o.sourceChecks?.length ? (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {o.sourceChecks.slice(0, 2).map((s: any) => (
-                      <span key={s._id} className="text-[11px] mono px-2 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-300">
+                      <span key={s._id} className="rounded-md border border-[#bfd9c9] bg-[#eaf2ed] px-2 py-0.5 text-[11px] tabular-nums text-ledger">
                         {s.type}: {s.status} — {s.quote.slice(0, 40)}…
                       </span>
                     ))}
@@ -226,8 +221,8 @@ export function OfferMatrix({ offers, activeNeed }: any) {
         })}
       </div>
 
-      <div className="px-4 py-3 bg-[#0f172a] border-t border-[#1e2d4a] text-[11px] mono text-slate-500">
-        Convex realtime: <span className="text-slate-300">useQuery(listOffersByNeed)</span> updates without refresh · Firecrawl checks stored as <span className="text-slate-300">sourceChecks</span> · live LLM extraction confidence shown per row
+      <div className="border-t border-hairline bg-paper px-4 py-3 text-[11px] tabular-nums text-soft">
+        Convex realtime: <span className="text-ink">useQuery(listOffersByNeed)</span> updates without refresh, Firecrawl checks stored as <span className="text-ink">sourceChecks</span>, live LLM extraction confidence shown per row
       </div>
     </div>
   );
