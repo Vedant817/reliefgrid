@@ -1,21 +1,7 @@
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
-import usePresence from "@convex-dev/presence/react";
 import { api } from "../../convex/_generated/api";
 import { formatCents, formatDate } from "../lib/format";
-import { getSessionAlias } from "../lib/session";
-
-function ReviewingNow({ needId }: { needId: any }) {
-  const alias = getSessionAlias();
-  const state = usePresence(api.presence, `need-${needId}`, `${alias}-review`);
-  const others = (state ?? []).filter((p: any) => !String(p.userId ?? "").startsWith(alias));
-  if (!others.length) return null;
-  return (
-    <span className="text-[11px] px-2 py-1 rounded-full border border-violet-400/20 bg-violet-400/10 text-violet-300">
-      {others.length} reviewing
-    </span>
-  );
-}
 
 function EvidenceAttach({ offerId }: { offerId: any }) {
   const attachments: any = useQuery(api.attachments.listAttachmentsByOffer, { offerId }) ?? [];
@@ -23,16 +9,20 @@ function EvidenceAttach({ offerId }: { offerId: any }) {
   const record = useMutation(api.attachments.recordAttachment);
   const remove = useMutation(api.attachments.removeAttachment);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const onFile = async (file: File | undefined) => {
     if (!file) return;
     setBusy(true);
+    setError(null);
     try {
       const url = await generateUrl({ offerId });
       const res = await fetch(url, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
       if (!res.ok) throw new Error("upload failed");
       const { storageId } = await res.json();
-      await record({ offerId, storageId, name: file.name, contentType: file.type, size: file.size });
+      await record({ offerId, storageId, name: file.name });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not upload evidence");
     } finally {
       setBusy(false);
     }
@@ -43,15 +33,30 @@ function EvidenceAttach({ offerId }: { offerId: any }) {
       <div className="flex flex-wrap items-center gap-2">
         <label className="text-[11px] px-2 py-1 rounded-full border border-slate-500/20 bg-slate-500/10 text-slate-300 cursor-pointer">
           {busy ? "Uploading…" : "+ Cert evidence"}
-          <input type="file" className="hidden" disabled={busy} onChange={(e) => void onFile(e.target.files?.[0])} />
+          <input type="file" aria-label="Attach certification evidence" className="hidden" disabled={busy} onChange={(event) => {
+            const input = event.currentTarget;
+            void onFile(input.files?.[0]).finally(() => { input.value = ""; });
+          }} />
         </label>
         {attachments.map((a: any) => (
           <span key={a._id} className="text-[11px] mono px-2 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 flex items-center gap-1">
             <a href={a.url ?? undefined} target="_blank" rel="noreferrer" className="underline underline-offset-2">{a.name}</a>
-            <button onClick={() => void remove({ attachmentId: a._id })} className="text-slate-500">×</button>
+            <button
+              aria-label={`Remove ${a.name}`}
+              disabled={busy}
+              onClick={() => {
+                setBusy(true);
+                setError(null);
+                void remove({ attachmentId: a._id })
+                  .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not remove evidence"))
+                  .finally(() => setBusy(false));
+              }}
+              className="text-slate-500 disabled:opacity-40"
+            >×</button>
           </span>
         ))}
       </div>
+      {error && <div role="alert" className="mt-2 text-[11px] text-red-300">{error}</div>}
     </div>
   );
 }
@@ -76,6 +81,8 @@ export function OfferMatrix({ offers, activeNeed }: any) {
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [draftStatus, setDraftStatus] = useState<Record<string, string>>({});
   const [sent, setSent] = useState<Record<string, boolean>>({});
+  const [pendingOffer, setPendingOffer] = useState<string | null>(null);
+  const [clarificationError, setClarificationError] = useState<Record<string, string>>({});
 
   if (!activeNeed) {
     return (
@@ -86,12 +93,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
     return (
       <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-6">
         <div className="text-sm font-semibold">Live Offer Matrix</div>
-        <div className="text-sm text-slate-400 mt-1">No offers yet. Seed will simulate 3 synthetic supplier replies (EN + Spanish) via AgentMail webhooks.</div>
-        <div className="mt-4 grid grid-cols-3 gap-2 text-xs">
-          <div className="rounded-xl bg-[#1a2332] border border-[#1e2d4a] p-3">Apex 70 × $11 — 4 PM · EN</div>
-          <div className="rounded-xl bg-[#1a2332] border border-[#1e2d4a] p-3">BlueRiver 100 × $9 — tomorrow · late</div>
-          <div className="rounded-xl bg-[#1a2332] border border-[#1e2d4a] p-3">Casa 30 × $10 — 5 PM · ES</div>
-        </div>
+        <div className="text-sm text-slate-400 mt-1">No offers yet. Add a supplier and approve an RFQ to begin collecting comparable replies.</div>
       </div>
     );
   }
@@ -109,7 +111,6 @@ export function OfferMatrix({ offers, activeNeed }: any) {
         <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Live Offer Matrix</div>
         <span className="text-xs mono text-slate-400 flex items-center gap-2">
           {offers.length} offers · {coverage?.totalQty ?? "?"} units quoted · realtime
-          {activeNeed && <ReviewingNow needId={activeNeed._id} />}
         </span>
       </div>
 
@@ -159,13 +160,22 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                   {!drafts[o._id] ? (
                     <button
                       onClick={async () => {
-                        const result = await draftClarification({ offerId: o._id });
-                        setDrafts((current) => ({ ...current, [o._id]: result.question }));
-                        setDraftStatus((current) => ({ ...current, [o._id]: result.providerStatus }));
+                        setPendingOffer(o._id);
+                        setClarificationError((current) => ({ ...current, [o._id]: "" }));
+                        try {
+                          const result = await draftClarification({ offerId: o._id });
+                          setDrafts((current) => ({ ...current, [o._id]: result.question }));
+                          setDraftStatus((current) => ({ ...current, [o._id]: result.providerStatus }));
+                        } catch (cause) {
+                          setClarificationError((current) => ({ ...current, [o._id]: cause instanceof Error ? cause.message : "Could not draft clarification" }));
+                        } finally {
+                          setPendingOffer(null);
+                        }
                       }}
-                      className="mt-2 px-3 py-1.5 rounded-full bg-amber-300 text-[#1c1505] text-xs font-bold"
+                      disabled={pendingOffer === o._id}
+                      className="mt-2 px-3 py-1.5 rounded-full bg-amber-300 text-[#1c1505] text-xs font-bold disabled:opacity-50"
                     >
-                      Draft targeted clarification
+                      {pendingOffer === o._id ? "Drafting…" : "Draft targeted clarification"}
                     </button>
                   ) : (
                     <div className="mt-2">
@@ -173,10 +183,18 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                       <div className="mt-2 flex items-center gap-2">
                         <span className="text-[10px] mono text-slate-500">LLM: {draftStatus[o._id] ?? "live"}</span>
                         <button
-                          disabled={sent[o._id]}
-                          onClick={async () => {
-                            await sendClarification({ offerId: o._id, approvedBy: "coordinator@reliefgrid.test" });
-                            setSent((current) => ({ ...current, [o._id]: true }));
+                           disabled={sent[o._id] || pendingOffer === o._id}
+                           onClick={async () => {
+                             setPendingOffer(o._id);
+                             setClarificationError((current) => ({ ...current, [o._id]: "" }));
+                             try {
+                               await sendClarification({ offerId: o._id, question: drafts[o._id] });
+                               setSent((current) => ({ ...current, [o._id]: true }));
+                             } catch (cause) {
+                               setClarificationError((current) => ({ ...current, [o._id]: cause instanceof Error ? cause.message : "Could not send clarification" }));
+                             } finally {
+                               setPendingOffer(null);
+                             }
                           }}
                           className="px-3 py-1.5 rounded-full border border-amber-300/30 text-amber-200 text-xs disabled:opacity-50"
                         >
@@ -187,6 +205,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
                   )}
                 </div>
               )}
+              {clarificationError[o._id] && <div role="alert" className="mt-2 text-[11px] text-red-300">{clarificationError[o._id]}</div>}
 
               <div className="mt-3 rounded-xl bg-[#0f172a] border border-[#1e2d4a] p-3">
                 <div className="text-xs tracking-[0.14em] uppercase text-slate-500">Extracted email</div>

@@ -6,8 +6,7 @@ export function IncidentBoard({ incidents, needs, activeIncident, activeNeed, on
       <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-6">
         <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">◆</div>
         <div className="mt-3 font-semibold">No incidents yet</div>
-        <div className="text-sm text-slate-400 mt-1">Click <b>Seed Demo</b> to create the flood-shelter scenario with 100 filters, 3 suppliers and a live allocation.</div>
-        <div className="mt-3 text-xs mono text-slate-500">Domain: flood-shelter supplies · NSF/ANSI 53 · synthetic inboxes only</div>
+        <div className="text-sm text-slate-400 mt-1">Create an urgent requirement to prepare supplier outreach and a defensible sourcing plan.</div>
       </div>
     );
   }
@@ -54,9 +53,6 @@ export function IncidentBoard({ incidents, needs, activeIncident, activeNeed, on
               >
                 <div className="font-medium text-sm leading-tight">{n.item}</div>
                 <div className={`text-xs mt-1 ${isActive ? "text-slate-600" : "text-slate-400"}`}>{n.qty} units · ${(n.budgetCents / 100).toFixed(0)} budget · {n.certRequired}</div>
-                <div className="mt-2 h-1.5 rounded-full bg-black/10 overflow-hidden">
-                  <div className={`h-full ${isActive ? "bg-[#0a0e1a]" : "bg-blue-500"}`} style={{ width: "67%" }} />
-                </div>
                 <div className={`text-[11px] mono mt-1 ${isActive ? "text-slate-500" : "text-slate-400"}`}>{n.status} · {formatDeadline(n.deadlineAt)}</div>
               </button>
             );

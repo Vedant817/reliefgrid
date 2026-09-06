@@ -1,12 +1,10 @@
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
-import { internal } from "./_generated/api";
 import { writeAudit } from "./lib/audit";
 
 // Deadline watchdog, run hourly by cron. Finds needs due within two hours
 // that still have no feasible cover, writes a tamper-evident escalation
-// audit per need, then schedules one digest email (never one per need, so a
-// busy hour cannot spam the inbox).
+// audit per need. Tenant data is not sent to a deployment-global mailbox.
 export const checkDeadlines = internalMutation({
   args: {},
   returns: v.object({ atRisk: v.number() }),
@@ -43,16 +41,6 @@ export const checkDeadlines = internalMutation({
         actor: "watchdog",
         incidentId: need.incidentId,
         meta: JSON.stringify({ item: need.item, qty: need.qty, deadlineAt: need.deadlineAt }),
-      });
-    }
-    if (fresh.length > 0) {
-      await ctx.scheduler.runAfter(0, internal.actions.notify.sendDeadlineDigest, {
-        items: fresh.map((need) => ({
-          needId: need._id,
-          item: need.item,
-          qty: need.qty,
-          deadlineAt: need.deadlineAt,
-        })),
       });
     }
     return { atRisk: fresh.length };

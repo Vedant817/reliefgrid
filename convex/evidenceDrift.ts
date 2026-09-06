@@ -4,22 +4,16 @@ import type { Id } from "./_generated/dataModel";
 import { allocateOffers } from "./lib/allocate";
 import { writeAudit } from "./lib/audit";
 import { offersByNeed } from "./offerTotals";
+import { requireNeedOwner } from "./model/auth";
+import { allocationInputHash } from "./lib/allocationHash";
 
 const BULLETIN_KEY = "filter-nsf53";
 const DEMO_TITLE = "Flood Shelter - North District";
 
-async function getDemoNeed(ctx: MutationCtx) {
-  const incident = await ctx.db.query("incidents").withIndex("by_title", (q) => q.eq("title", DEMO_TITLE)).unique();
-  if (!incident) throw new Error("Reset Demo before running Evidence Drift");
-  const needs = await ctx.db.query("needs").withIndex("by_incident", (q) => q.eq("incidentId", incident._id)).collect();
-  if (!needs[0]) throw new Error("Demo need not found");
-  return needs[0];
-}
-
 async function recompute(ctx: MutationCtx, needId: Id<"needs">) {
   const need = await ctx.db.get(needId);
   if (!need) throw new Error("Need not found");
-  const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", needId)).collect();
+  const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", needId)).take(200);
   const inputs = await Promise.all(offers.map(async (offer) => ({
     offerId: String(offer._id),
     supplierId: String(offer.supplierId),
@@ -31,7 +25,7 @@ async function recompute(ctx: MutationCtx, needId: Id<"needs">) {
     confidence: offer.confidence,
   })));
   const result = allocateOffers(inputs, need);
-  const plans = await ctx.db.query("allocationPlans").withIndex("by_need", (q) => q.eq("needId", needId)).collect();
+  const plans = await ctx.db.query("allocationPlans").withIndex("by_need", (q) => q.eq("needId", needId)).take(100);
   for (const plan of plans) {
     if (plan.status === "proposed" || plan.status === "approved") await ctx.db.patch(plan._id, { status: "superseded" });
   }
@@ -42,6 +36,7 @@ async function recompute(ctx: MutationCtx, needId: Id<"needs">) {
     totalQty: result.totalQty,
     createdAt: Date.now(),
     decisionTrace: result.trace,
+    inputHash: allocationInputHash(need, inputs),
   });
   for (const selected of result.selected) {
     await ctx.db.insert("allocationLines", {
@@ -61,45 +56,75 @@ export const getEvidenceDriftState = query({
   args: { needId: v.optional(v.id("needs")) },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const bulletin = await ctx.db.query("demoBulletins").withIndex("by_key", (q) => q.eq("key", BULLETIN_KEY)).unique();
+    const ownerId = args.needId ? (await requireNeedOwner(ctx, args.needId)).ownerId : null;
+    const bulletin = ownerId
+      ? await ctx.db.query("demoBulletins").withIndex("by_owner_and_key", (q) => q.eq("ownerId", ownerId).eq("key", BULLETIN_KEY)).unique()
+      : null;
     const notices = args.needId
       ? await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", args.needId!)).order("desc").take(1)
       : [];
-    return { bulletin, holdNotice: notices[0] ?? null };
+    const holdNotice = notices[0] ?? null;
+    let canSendHoldNotice = false;
+    if (holdNotice) {
+      const offer = await ctx.db.get(holdNotice.offerId);
+      const threads = await ctx.db.query("rfqThreads").withIndex("by_need", (q) => q.eq("needId", holdNotice.needId)).take(100);
+      const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", holdNotice.needId)).first();
+      canSendHoldNotice = Boolean(offer && inbox && threads.some((thread) => thread.supplierId === offer.supplierId && thread.agentmailMessageId));
+    }
+    return { bulletin, holdNotice, canSendHoldNotice };
   },
 });
 
-export const activateRecall = mutation({
-  args: {},
+export const getPublicBulletin = query({
+  args: { bulletinId: v.id("demoBulletins") },
+  returns: v.union(
+    v.object({
+      title: v.string(),
+      state: v.string(),
+      body: v.string(),
+      updatedAt: v.number(),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const bulletin = await ctx.db.get(args.bulletinId);
+    if (!bulletin) return null;
+    return { title: bulletin.title, state: bulletin.state, body: bulletin.body, updatedAt: bulletin.updatedAt };
+  },
+});
+
+export const applyVerifiedRecall = internalMutation({
+  args: { needId: v.id("needs"), sourceUrl: v.string(), quote: v.string(), contentHash: v.string() },
   returns: v.object({ planId: v.id("allocationPlans"), totalQty: v.number(), totalCostCents: v.number() }),
-  handler: async (ctx) => {
-    const need = await getDemoNeed(ctx);
-    const apex = await ctx.db.query("suppliers").withIndex("by_email", (q) => q.eq("contactEmail", "rfq+apex@synthetic.reliefgrid.test")).unique();
+  handler: async (ctx, args) => {
+    const need = await ctx.db.get(args.needId);
+    if (!need) throw new Error("Need not found");
+    const incident = await ctx.db.get(need.incidentId);
+    if (!incident?.ownerId) throw new Error("Incident owner not found");
+    if (!incident.isDemo) throw new Error("Controlled recall can only modify a demo incident");
+    const apex = await ctx.db.query("suppliers").withIndex("by_owner_and_email", (q) => q.eq("ownerId", incident.ownerId).eq("contactEmail", "rfq+apex@synthetic.reliefgrid.test")).unique();
     if (!apex) throw new Error("Apex demo supplier not found");
-    const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).take(200);
     const offer = offers.find((candidate) => candidate.supplierId === apex._id);
     if (!offer) throw new Error("Apex demo offer not found");
 
-    const bulletin = await ctx.db.query("demoBulletins").withIndex("by_key", (q) => q.eq("key", BULLETIN_KEY)).unique();
-    if (!bulletin) throw new Error("Demo bulletin not found");
-    const citationUrl = "/demo-bulletin";
-    await ctx.db.patch(bulletin._id, {
-      state: "RECALL_ACTIVE",
-      body: "RECALL ACTIVE: model NF-53 lot A17 may fail contaminant reduction requirements. Stop distribution pending review.",
-      updatedAt: Date.now(),
-    });
+    const citationUrl = args.sourceUrl;
     await ctx.db.insert("sourceChecks", {
       offerId: offer._id,
       url: citationUrl,
-      quote: "RECALL ACTIVE: model NF-53 lot A17 may fail contaminant reduction requirements.",
+      quote: args.quote,
       retrievedAt: Date.now(),
       status: "failed",
       reason: "Controlled bulletin changed after initial verification",
       type: "recall",
+      claim: "NF-53 recall status",
+      sourceAuthority: "authoritative",
+      contentHash: args.contentHash,
+      matched: true,
     });
     await ctx.db.patch(offer._id, { certStatus: "failed", updatedAt: Date.now() });
 
-    const existingNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const existingNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
     for (const notice of existingNotices) await ctx.db.delete(notice._id);
     await ctx.db.insert("holdNotices", {
       needId: need._id,
@@ -137,18 +162,20 @@ export const activateRecall = mutation({
 });
 
 export const addReplacementOffer = mutation({
-  args: {},
+  args: { needId: v.id("needs") },
   returns: v.object({ planId: v.id("allocationPlans"), totalQty: v.number(), totalCostCents: v.number() }),
-  handler: async (ctx) => {
-    const need = await getDemoNeed(ctx);
+  handler: async (ctx, args) => {
+    const { need, ownerId } = await requireNeedOwner(ctx, args.needId);
+    const incident = await ctx.db.get(need.incidentId);
+    if (!incident?.isDemo) throw new Error("Synthetic replacement stock is available only in the controlled demo");
     const email = "rfq+delta@synthetic.reliefgrid.test";
-    let supplier = await ctx.db.query("suppliers").withIndex("by_email", (q) => q.eq("contactEmail", email)).unique();
+    let supplier = await ctx.db.query("suppliers").withIndex("by_owner_and_email", (q) => q.eq("ownerId", ownerId).eq("contactEmail", email)).unique();
     if (!supplier) {
-      const id = await ctx.db.insert("suppliers", { name: "Delta Emergency Stock", contactEmail: email, region: "East", verified: true, createdAt: Date.now() });
+      const id = await ctx.db.insert("suppliers", { name: "Delta Emergency Stock", contactEmail: email, region: "East", verified: true, ownerId, createdAt: Date.now() });
       supplier = await ctx.db.get(id);
     }
     if (!supplier) throw new Error("Could not create replacement supplier");
-    const current = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const current = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).take(200);
     const replacement = current.find((offer) => offer.supplierId === supplier!._id);
     if (!replacement) {
       const offerId = await ctx.db.insert("offers", {
@@ -188,6 +215,92 @@ export const getHoldNotice = internalQuery({
   handler: async (ctx, args) => await ctx.db.get(args.noticeId),
 });
 
+export const getHoldNoticeForApproval = internalQuery({
+  args: { noticeId: v.id("holdNotices") },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const notice = await ctx.db.get(args.noticeId);
+    if (!notice) throw new Error("Hold notice not found");
+    await requireNeedOwner(ctx, notice.needId);
+    return notice;
+  },
+});
+
+export const claimHoldNoticeSend = internalMutation({
+  args: { noticeId: v.id("holdNotices") },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const notice = await ctx.db.get(args.noticeId);
+    if (!notice || (notice.status !== "draft" && notice.status !== "sending")) throw new Error("Draft hold notice not found or already sent");
+    const { ownerId } = await requireNeedOwner(ctx, notice.needId);
+    const offer = await ctx.db.get(notice.offerId);
+    if (!offer || offer.needId !== notice.needId) throw new Error("Hold notice offer not found");
+    const threads = await ctx.db.query("rfqThreads").withIndex("by_need", (q) => q.eq("needId", notice.needId)).take(100);
+    const thread = threads.find((candidate) => candidate.supplierId === offer.supplierId);
+    const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", notice.needId)).first();
+    if (!thread?.agentmailMessageId || !inbox) throw new Error("A sent supplier thread is required before sending a hold notice");
+    const dispatchKey = notice.dispatchKey ?? `hold-${String(notice._id)}`;
+    const reconcile = notice.status === "sending";
+    const claimedAt = notice.sendClaimedAt ?? Date.now();
+    if (!reconcile) await ctx.db.patch(notice._id, { status: "sending", dispatchKey, sendClaimedAt: claimedAt });
+    return { notice, thread, inbox, ownerId, dispatchKey, reconcile, claimedAt };
+  },
+});
+
+export const releaseFreshHoldNoticeClaim = internalMutation({
+  args: { noticeId: v.id("holdNotices"), claimedAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const notice = await ctx.db.get(args.noticeId);
+    if (notice?.status === "sending" && notice.sendClaimedAt === args.claimedAt) {
+      await ctx.db.patch(args.noticeId, { status: "draft", dispatchKey: undefined, sendClaimedAt: undefined });
+    }
+    return null;
+  },
+});
+
+export const getBulletin = internalQuery({
+  args: { bulletinId: v.id("demoBulletins") },
+  returns: v.any(),
+  handler: async (ctx, args) => await ctx.db.get(args.bulletinId),
+});
+
+export const setBulletinRecall = internalMutation({
+  args: { needId: v.id("needs") },
+  returns: v.id("demoBulletins"),
+  handler: async (ctx, args) => {
+    const need = await ctx.db.get(args.needId);
+    if (!need) throw new Error("Need not found");
+    const incident = await ctx.db.get(need.incidentId);
+    if (!incident?.ownerId) throw new Error("Incident owner not found");
+    if (!incident.isDemo) throw new Error("Controlled recall can only modify a demo incident");
+    const bulletin = await ctx.db.query("demoBulletins").withIndex("by_owner_and_key", (q) => q.eq("ownerId", incident.ownerId).eq("key", BULLETIN_KEY)).unique();
+    if (!bulletin) throw new Error("Reset Demo before running Evidence Drift");
+    await ctx.db.patch(bulletin._id, {
+      state: "RECALL_ACTIVE",
+      body: "RECALL ACTIVE: model NF-53 lot A17 may fail contaminant reduction requirements. Stop distribution pending review.",
+      updatedAt: Date.now(),
+    });
+    return bulletin._id;
+  },
+});
+
+export const restoreBulletinClear = internalMutation({
+  args: { bulletinId: v.id("demoBulletins") },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const bulletin = await ctx.db.get(args.bulletinId);
+    if (bulletin?.state === "RECALL_ACTIVE") {
+      await ctx.db.patch(args.bulletinId, {
+        state: "CLEAR",
+        body: "No active safety notices for model NF-53.",
+        updatedAt: Date.now(),
+      });
+    }
+    return null;
+  },
+});
+
 export const markHoldNoticeSent = internalMutation({
   args: {
     noticeId: v.id("holdNotices"),
@@ -197,21 +310,14 @@ export const markHoldNoticeSent = internalMutation({
   returns: v.null(),
   handler: async (ctx, args) => {
     const notice = await ctx.db.get(args.noticeId);
-    if (!notice || notice.status !== "draft") throw new Error("Draft hold notice not found");
+    if (!notice || notice.status !== "sending") throw new Error("Claimed hold notice not found");
     await ctx.db.patch(args.noticeId, {
       status: "sent",
       approvedAt: Date.now(),
       approvedBy: args.approvedBy,
+      sendClaimedAt: undefined,
     });
-    await ctx.db.insert("providerRuns", {
-      provider: "agentmail",
-      operation: "send_hold_notice",
-      status: "live",
-      latencyMs: 0,
-      requestId: args.agentmailThreadId,
-      at: Date.now(),
-      meta: JSON.stringify({ approvedBy: args.approvedBy }),
-    });
+    void args.agentmailThreadId;
     return null;
   },
 });

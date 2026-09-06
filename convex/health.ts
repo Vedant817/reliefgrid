@@ -1,7 +1,8 @@
-import { query, mutation } from "./_generated/server";
+import { query, internalMutation } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
+import { requireOwnerId } from "./model/auth";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -34,6 +35,7 @@ const providerRun = v.object({
   requestId: v.optional(v.string()),
   at: v.number(),
   meta: v.optional(v.string()),
+  ownerId: v.optional(v.string()),
 });
 
 // Backend integration health reports live/mock/degraded/not_configured
@@ -47,13 +49,14 @@ export const getProviderHealth = query({
     lastRun: v.union(providerRun, v.null()),
   })),
   handler: async (ctx) => {
+    const ownerId = await requireOwnerId(ctx);
     const env = process.env;
     const hasOpenAI = !!env.OPENAI_API_KEY;
     const hasGroq = !!env.GROQ_API_KEY;
     const hasFirecrawl = !!env.FIRECRAWL_API_KEY;
     const hasAgentMail = !!env.AGENTMAIL_API_KEY;
 
-    const recent = await ctx.db.query("providerRuns").withIndex("by_at").order("desc").take(20);
+    const recent = await ctx.db.query("providerRuns").withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId)).order("desc").take(20);
 
     const lastBy = (provider: string) => recent.find((r) => r.provider === provider) ?? null;
 
@@ -83,26 +86,26 @@ export const getProviderHealth = query({
       },
       {
         provider: "openai",
-        status: hasOpenAI ? statusFor(openaiRun) : "mock",
-        detail: hasOpenAI ? (openaiRun ? "configured; run evidence below" : "configured; no run verified") : "mock extraction (no key)",
+        status: hasOpenAI ? statusFor(openaiRun) : "not_configured",
+        detail: hasOpenAI ? (openaiRun ? "configured; run evidence below" : "configured; no run verified") : "not configured",
         lastRun: openaiRun,
       },
       {
         provider: "groq",
-        status: hasGroq ? statusFor(groqRun) : "mock",
-        detail: hasGroq ? (groqRun ? "configured; run evidence below" : "configured; no run verified") : "free lane available (no key)",
+        status: hasGroq ? statusFor(groqRun) : "not_configured",
+        detail: hasGroq ? (groqRun ? "configured; run evidence below" : "configured; no run verified") : "not configured",
         lastRun: groqRun,
       },
       {
         provider: "firecrawl",
-        status: hasFirecrawl ? statusFor(firecrawlRun) : "mock",
-        detail: hasFirecrawl ? (firecrawlRun ? "configured; run evidence below" : "configured; no run verified") : "mock verification (no key)",
+        status: hasFirecrawl ? statusFor(firecrawlRun) : "not_configured",
+        detail: hasFirecrawl ? (firecrawlRun ? "configured; run evidence below" : "configured; no run verified") : "not configured",
         lastRun: firecrawlRun,
       },
       {
         provider: "agentmail",
-        status: hasAgentMail ? statusFor(agentmailRun) : "mock",
-        detail: hasAgentMail ? (agentmailRun ? "configured; run evidence below" : "configured; no run verified") : "synthetic threads (no key)",
+        status: hasAgentMail ? statusFor(agentmailRun) : "not_configured",
+        detail: hasAgentMail ? (agentmailRun ? "configured; run evidence below" : "configured; no run verified") : "not configured",
         lastRun: agentmailRun,
       },
     ];
@@ -110,7 +113,7 @@ export const getProviderHealth = query({
   },
 });
 
-export const recordProviderRun = mutation({
+export const recordProviderRun = internalMutation({
   args: {
     provider,
     operation: v.string(),
@@ -118,6 +121,7 @@ export const recordProviderRun = mutation({
     latencyMs: v.optional(v.number()),
     requestId: v.optional(v.string()),
     meta: v.optional(v.string()),
+    ownerId: v.optional(v.string()),
   },
   returns: v.id("providerRuns"),
   handler: async (ctx, args) => {
@@ -129,7 +133,9 @@ export const listProviderRuns = query({
   args: { limit: v.optional(v.number()) },
   returns: v.array(providerRun),
   handler: async (ctx, args) => {
-    return await ctx.db.query("providerRuns").withIndex("by_at").order("desc").take(args.limit ?? 20);
+    const ownerId = await requireOwnerId(ctx);
+    const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 20), 100));
+    return await ctx.db.query("providerRuns").withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId)).order("desc").take(limit);
   },
 });
 
@@ -137,6 +143,7 @@ export const listProviderRunsPage = query({
   args: { paginationOpts: paginationOptsValidator },
   returns: v.any(),
   handler: async (ctx, args) => {
-    return await ctx.db.query("providerRuns").withIndex("by_at").order("desc").paginate(args.paginationOpts);
+    const ownerId = await requireOwnerId(ctx);
+    return await ctx.db.query("providerRuns").withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId)).order("desc").paginate(args.paginationOpts);
   },
 });

@@ -1,8 +1,12 @@
 import { v } from "convex/values";
-import { mutation, type MutationCtx } from "./_generated/server";
+import { internalMutation, mutation, type MutationCtx } from "./_generated/server";
 import { allocateOffers } from "./lib/allocate";
 import { writeAudit } from "./lib/audit";
 import { offersByNeed } from "./offerTotals";
+import { requireOwnerId } from "./model/auth";
+import { allocationInputHash } from "./lib/allocationHash";
+import { cancel, getStatus } from "@convex-dev/workflow";
+import { components } from "./_generated/api";
 
 const DEMO_TITLE = "Flood Shelter - North District";
 const LEGACY_DEMO_TITLE = "Flood Shelter — North District";
@@ -17,7 +21,7 @@ async function deleteAudit(ctx: MutationCtx, entity: string, entityId: string) {
   const events = await ctx.db
     .query("auditEvents")
     .withIndex("by_entity", (q) => q.eq("entity", entity).eq("entityId", entityId))
-    .collect();
+    .take(500);
   for (const event of events) await ctx.db.delete(event._id);
 }
 
@@ -25,47 +29,57 @@ async function deleteDemoIncident(ctx: MutationCtx, incidentId: any) {
   const needs = await ctx.db
     .query("needs")
     .withIndex("by_incident", (q) => q.eq("incidentId", incidentId))
-    .collect();
+    .take(10);
 
   for (const need of needs) {
-    const plans = await ctx.db.query("allocationPlans").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const plans = await ctx.db.query("allocationPlans").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
     for (const plan of plans) {
-      const lines = await ctx.db.query("allocationLines").withIndex("by_plan", (q) => q.eq("planId", plan._id)).collect();
+      const notices = await ctx.db.query("awardNotices").withIndex("by_plan", (q) => q.eq("planId", plan._id)).take(100);
+      for (const notice of notices) await ctx.db.delete(notice._id);
+      const lines = await ctx.db.query("allocationLines").withIndex("by_plan", (q) => q.eq("planId", plan._id)).take(200);
       for (const line of lines) await ctx.db.delete(line._id);
-      const approvals = await ctx.db.query("approvals").withIndex("by_plan", (q) => q.eq("planId", plan._id)).collect();
+      const approvals = await ctx.db.query("approvals").withIndex("by_plan", (q) => q.eq("planId", plan._id)).take(10);
       for (const approval of approvals) await ctx.db.delete(approval._id);
       await deleteAudit(ctx, "allocationPlans", String(plan._id));
       await ctx.db.delete(plan._id);
     }
 
-    const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).take(200);
     for (const offer of offers) {
-      const checks = await ctx.db.query("sourceChecks").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).collect();
+      const checks = await ctx.db.query("sourceChecks").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).take(100);
       for (const check of checks) await ctx.db.delete(check._id);
-      const attachments = await ctx.db.query("evidenceAttachments").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).collect();
+      const attachments = await ctx.db.query("evidenceAttachments").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).take(20);
       for (const attachment of attachments) {
         await ctx.storage.delete(attachment.storageId);
         await ctx.db.delete(attachment._id);
       }
-      const versions = await ctx.db.query("offerVersions").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).collect();
+      const versions = await ctx.db.query("offerVersions").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).take(500);
       for (const version of versions) await ctx.db.delete(version._id);
       await deleteAudit(ctx, "offers", String(offer._id));
-      await offersByNeed.delete(ctx, offer);
+      await offersByNeed.deleteIfExists(ctx, offer);
       await ctx.db.delete(offer._id);
     }
 
-    const threads = await ctx.db.query("rfqThreads").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const threads = await ctx.db.query("rfqThreads").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
     for (const thread of threads) {
       await deleteAudit(ctx, "rfqThreads", String(thread._id));
       await ctx.db.delete(thread._id);
     }
-    const inboxes = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const inboxes = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", need._id)).take(5);
     for (const inbox of inboxes) await ctx.db.delete(inbox._id);
-    const deliveries = await ctx.db.query("deliveries").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const inboxClaims = await ctx.db.query("inboxClaims").withIndex("by_need", (q) => q.eq("needId", need._id)).take(2);
+    for (const claim of inboxClaims) await ctx.db.delete(claim._id);
+    const deliveries = await ctx.db.query("deliveries").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
     for (const delivery of deliveries) await ctx.db.delete(delivery._id);
-    const holdNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const holdNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
     for (const notice of holdNotices) await ctx.db.delete(notice._id);
-    const orphanVersions = await ctx.db.query("offerVersions").withIndex("by_need", (q) => q.eq("needId", need._id)).collect();
+    const recoveryRuns = await ctx.db.query("recoveryRuns").withIndex("by_need", (q) => q.eq("needId", need._id)).take(20);
+    for (const run of recoveryRuns) {
+      const status = await getStatus(ctx, components.workflow, run.workflowId as any);
+      if (status.type === "inProgress") await cancel(ctx, components.workflow, run.workflowId as any);
+      await ctx.db.delete(run._id);
+    }
+    const orphanVersions = await ctx.db.query("offerVersions").withIndex("by_need", (q) => q.eq("needId", need._id)).take(500);
     for (const version of orphanVersions) await ctx.db.delete(version._id);
     await deleteAudit(ctx, "needs", String(need._id));
     await ctx.db.delete(need._id);
@@ -75,20 +89,23 @@ async function deleteDemoIncident(ctx: MutationCtx, incidentId: any) {
 }
 
 export async function resetDemoData(ctx: MutationCtx) {
+  const ownerId = await requireOwnerId(ctx);
   const demoIncidents = [
-    ...(await ctx.db.query("incidents").withIndex("by_title", (q) => q.eq("title", DEMO_TITLE)).collect()),
-    ...(await ctx.db.query("incidents").withIndex("by_title", (q) => q.eq("title", LEGACY_DEMO_TITLE)).collect()),
+    ...(await ctx.db.query("incidents").withIndex("by_owner_and_title", (q) => q.eq("ownerId", ownerId).eq("title", DEMO_TITLE)).take(10)),
+    ...(await ctx.db.query("incidents").withIndex("by_owner_and_title", (q) => q.eq("ownerId", ownerId).eq("title", LEGACY_DEMO_TITLE)).take(10)),
   ];
-  for (const incident of demoIncidents) await deleteDemoIncident(ctx, incident._id);
+  for (const incident of demoIncidents) {
+    if (incident.isDemo) await deleteDemoIncident(ctx, incident._id);
+  }
 
   const now = Date.now();
   const supplierIds = [];
   for (const fixture of supplierFixtures) {
     const existing = await ctx.db
       .query("suppliers")
-      .withIndex("by_email", (q) => q.eq("contactEmail", fixture.contactEmail))
+      .withIndex("by_owner_and_email", (q) => q.eq("ownerId", ownerId).eq("contactEmail", fixture.contactEmail))
       .unique();
-    supplierIds.push(existing?._id ?? await ctx.db.insert("suppliers", { ...fixture, createdAt: now }));
+    supplierIds.push(existing?._id ?? await ctx.db.insert("suppliers", { ...fixture, ownerId, createdAt: now }));
   }
 
   const incidentId = await ctx.db.insert("incidents", {
@@ -99,6 +116,8 @@ export async function resetDemoData(ctx: MutationCtx) {
     createdAt: now,
     updatedAt: now,
     description: "Synthetic flood response scenario for 200 residents.",
+    ownerId,
+    isDemo: true,
   });
   const needId = await ctx.db.insert("needs", {
     incidentId,
@@ -107,6 +126,7 @@ export async function resetDemoData(ctx: MutationCtx) {
     deadlineAt: now + 4 * 60 * 60 * 1000,
     budgetCents: 120000,
     certRequired: "NSF/ANSI 53",
+    evidenceKey: "NF-53",
     partialAllowed: true,
     status: "planning",
     createdAt: now,
@@ -155,6 +175,7 @@ export async function resetDemoData(ctx: MutationCtx) {
   const planId = await ctx.db.insert("allocationPlans", {
     needId, status: "proposed", totalCostCents: result.totalCostCents,
     totalQty: result.totalQty, createdAt: now, decisionTrace: result.trace,
+    inputHash: allocationInputHash({ qty: 100, budgetCents: 120000, deadlineAt: now + 4 * 3600000, certRequired: "NSF/ANSI 53", partialAllowed: true }, offers),
   });
   for (const selected of result.selected) {
     await ctx.db.insert("allocationLines", {
@@ -164,10 +185,10 @@ export async function resetDemoData(ctx: MutationCtx) {
     });
   }
 
-  const bulletin = await ctx.db.query("demoBulletins").withIndex("by_key", (q) => q.eq("key", "filter-nsf53")).unique();
+  const bulletin = await ctx.db.query("demoBulletins").withIndex("by_owner_and_key", (q) => q.eq("ownerId", ownerId).eq("key", "filter-nsf53")).unique();
   const bulletinValue = { title: "Northstar Filter Model NF-53 Safety Bulletin", state: "CLEAR" as const, body: "No active safety notices for model NF-53.", updatedAt: now };
   if (bulletin) await ctx.db.patch(bulletin._id, bulletinValue);
-  else await ctx.db.insert("demoBulletins", { key: "filter-nsf53", ...bulletinValue });
+  else await ctx.db.insert("demoBulletins", { key: "filter-nsf53", ownerId, ...bulletinValue });
 
   const snapshotBase = { incident: { id: String(incidentId), title: DEMO_TITLE }, need: { id: String(needId), item: "Portable water filters (NSF/ANSI 53)", qty: 100 } };
   await writeAudit(ctx, {
@@ -189,6 +210,18 @@ export async function resetDemoData(ctx: MutationCtx) {
 
   return { incidentId, needId, planId };
 }
+
+// Removes one incident and its entire graph (needs, offers, plans, threads,
+// audits, attachments). Used to purge scratch/test incidents; the canonical
+// demo is rebuilt with resetDemo afterwards.
+export const purgeIncident = internalMutation({
+  args: { incidentId: v.id("incidents") },
+  returns: v.object({ purged: v.boolean() }),
+  handler: async (ctx, args) => {
+    await deleteDemoIncident(ctx, args.incidentId);
+    return { purged: true };
+  },
+});
 
 export const resetDemo = mutation({
   args: {},

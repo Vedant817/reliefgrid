@@ -2,17 +2,17 @@
 
 - **Project:** ReliefGrid
 - **Event:** Convex All Gas Hackathon
-- **What it does:** Coordinates emergency-supply RFQs, verifies supplier offers, and proposes auditable allocations with live evidence-drift recovery.
+- **What it does:** Turns urgent supplier email into a human-approved sourcing plan and freezes that plan when authoritative evidence changes.
 - **Live app:** not deployed
 - **Repo:** none
 - **Frontend:** not deployed
 - **Convex deployment:** https://judicious-rat-761.convex.cloud
-- **Components:** none
-- **Convex features:** schema, tables, indexes, queries, mutations, actions, HTTP actions, crons, realtime queries
-- **Auth:** none
-- **AI models:** none
+- **Components:** AgentMail, Aggregate, Auth, Firecrawl, Rate Limiter, Workflow
+- **Convex features:** schema, indexes, queries, mutations, actions, signed HTTP actions, crons, realtime subscriptions, workflows, storage, search
+- **Auth:** anonymous judge sessions with server-derived per-user ownership
+- **AI models:** Groq-hosted GPT-OSS for evidence-backed extraction; direct OpenAI supported but not yet proven
 - **Started:** 2026-09-02T17:02:09Z
-- **Last updated:** 2026-09-05T12:05:22Z
+- **Last updated:** 2026-09-06T11:19:26Z
 
 ## Log
 
@@ -75,3 +75,15 @@ Worked through the open-issue list and resolved everything resolvable without ne
 
 ### 2026-09-05 - reply loop closed
 With a full-access key, every remaining mail-side row closed in one pass: one real inbox per need created and mapped idempotently, an org-wide webhook registered with its secret rotated server-side, and a genuine two-inbox round trip completed — RFQ sent, supplier reply in-thread, signed webhook ingest, thread matched, live extraction into exactly one offer version that correctly abstained on the ambiguous price. Scratch inboxes deleted and test data purged. All three browser harnesses re-ran green (flow, two-user prod run, two-browser sync plus approval race with exactly one winner). Plan ledger 42/47; demo restored canonical.
+
+### 2026-09-05 - trust and product hardening
+Reframed ReliefGrid around decision integrity rather than feature breadth. Operational records are now private to the authenticated incident owner; unsigned synthetic webhooks were removed; inbound mail must match the recorded supplier; claims remain under review until an authoritative source matches; partial plans cannot be awarded; RFQ, clarification, hold, award, and decline messages use the intended supplier thread. The Evidence Drift button now requires a real Firecrawl read of a public Convex bulletin before invalidation. Added real requirement intake, isolated demo controls, reproducible Playwright tests, lint configuration, release plan, README, and video script. Public deployment, repository publication, credential rotation, video upload, social post, and submission remain explicit external actions.
+
+### 2026-09-05 - release certification on development
+Closed the remaining transactional and tenant boundaries: approval revalidates the exact current allocation inputs, authoritative recalls survive later certificate checks and supplier replies, terminal award acknowledgments no longer become quotes, provider history is owner-scoped, fixture recovery is demo-only, and high-cardinality paths are bounded. AgentMail creation uses deterministic client IDs and every irreversible send uses its documented HTTP idempotency key behind a durable claim. Send and inbox claim primitives are internal-only, and aggregate migration is paginated and idempotent. Removed the nonessential chatbot, embeddings, and presence surfaces. Upgraded Vite and Vitest; full npm audit reports zero vulnerabilities. Evidence: 35 unit/integration tests, two smoke journeys, three comprehensive functional browser journeys, production build, lint, typecheck, two live Firecrawl/workflow browser journeys, and one live AgentMail/Groq round trip all pass against the development deployment. Production and public launch remain untouched.
+
+### 2026-09-06 - comprehensive browser repair pass
+Exercised the customer and controlled-judge workspaces in Chromium across desktop, a Tokyo timezone, and an iPhone viewport. Browser evidence found and fixed two user-blocking defects: the requirement form generated UTC text for a local deadline input, causing valid submissions to be rejected east of UTC+6, and the controlled public bulletin ignored its record ID and remained on Loading forever. Added a scoped public bulletin projection, rollback when Firecrawl cannot confirm a staged recall, real extracted-email body hydration, recoverable authentication/provider/attachment errors, duplicate-click guards, accessible attachment removal, prerequisite-aware hold delivery, and recovery controls that activate only after a verified shortfall. Verified requirement creation/search, supplier intake without sending, bulletin popup, evidence upload/delete, allocation recompute/approval, counterfactual controls, provider proof, responsive layout, direct replacement, and durable human-approved recovery with no browser runtime errors.
+
+### 2026-09-06 - AgentMail and Groq round trip re-certified
+The live browser test exposed AgentMail's three-inbox plan limit: the intended shared-inbox fallback was documented but not implemented, so per-need creation failed with a provider 403. Implemented and configured shared-inbox mapping while preserving per-need database records and thread routing. Re-ran through the customer UI using only two controlled AgentMail inboxes: created a requirement and supplier, explicitly approved the RFQ, received it through AgentMail, replied in-thread, passed the signed webhook and exact sender match, and persisted Groq's live extraction as a 25-unit offer at `$4.50`. The recipient inbox was controlled by the same AgentMail account; no outside supplier was contacted.

@@ -2,11 +2,9 @@ import { defineApp } from "convex/server";
 import { v } from "convex/values";
 import rateLimiter from "@convex-dev/rate-limiter/convex.config.js";
 import aggregate from "@convex-dev/aggregate/convex.config.js";
-import presence from "@convex-dev/presence/convex.config.js";
 import agentmail from "@agentmail/convex/convex.config";
 import firecrawl from "@firecrawl/firecrawl-convex/convex.config";
 import workflow from "@convex-dev/workflow/convex.config";
-import agent from "@convex-dev/agent/convex.config";
 
 const app = defineApp({
   env: {
@@ -16,14 +14,12 @@ const app = defineApp({
 });
 app.use(rateLimiter, { name: "rateLimiter" });
 app.use(aggregate, { name: "aggregate" });
-app.use(presence, { name: "presence" });
 // Note: @agentmail/convex v0.1.0 declares no component env, so its send
 // workpool cannot see deployment keys. Sends stay on our proven direct lane
 // (actions/sendRfq); the component is wired for Svix-verified inbound ingest
 // and reactive thread state, whose webhook secret is passed explicitly.
 app.use(agentmail);
 app.use(workflow);
-app.use(agent);
 app.use(firecrawl, {
   httpPrefix: "/firecrawl/",
   env: {

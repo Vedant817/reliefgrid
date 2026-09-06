@@ -2,12 +2,12 @@
 
 import { v } from "convex/values";
 import { action } from "../_generated/server";
-import { api } from "../_generated/api";
-import { createAgentMailInbox, resolveAgentMail } from "../lib/agentmail";
+import { api, internal } from "../_generated/api";
+import { createAgentMailInbox, getAgentMailInbox, resolveAgentMail } from "../lib/agentmail";
 import { checkLimit } from "../rateLimits";
 
-// One real AgentMail inbox per need, mapped in the inboxes table.
-// Idempotent: an existing mapping is returned without creating a duplicate.
+// Each need gets an inbox mapping. Constrained plans reuse one configured
+// AgentMail inbox; otherwise a full-access account can create a dedicated one.
 export const ensureInboxForNeed = action({
   args: { needId: v.id("needs") },
   returns: v.object({
@@ -16,25 +16,52 @@ export const ensureInboxForNeed = action({
     providerStatus: v.literal("live"),
   }),
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Authentication required");
     const need: any = await ctx.runQuery(api.needs.getNeed, { needId: args.needId });
     if (!need) throw new Error("Need not found");
+    const existing: any = await ctx.runQuery(api.inboxes.getInboxByNeed, { needId: args.needId });
+    if (existing) return { inboxId: existing.inboxId, email: existing.email, providerStatus: "live" as const };
     const mail = resolveAgentMail();
     if (!mail.apiKey) throw new Error("no AgentMail key configured (AGENTMAIL_API_KEY)");
-    const username = `reliefgrid-${String(args.needId).slice(0, 8).toLowerCase()}`;
-    const created = await createAgentMailInbox(mail, username, `ReliefGrid ${need.item}`.slice(0, 60));
-    const inboxRowId: string = await ctx.runMutation(api.inboxes.ensureInbox, {
+    const claim: any = await ctx.runMutation(internal.inboxes.claimInboxCreation, { needId: args.needId });
+    if (claim.existing) return { inboxId: claim.existing.inboxId, email: claim.existing.email, providerStatus: "live" as const };
+    if (!claim.shouldCreate) throw new Error("Inbox creation is already in progress");
+    let created: { inboxId: string; email: string; latencyMs: number };
+    let operation: "map_shared_inbox" | "create_inbox";
+    if (mail.inboxId) {
+      operation = "map_shared_inbox";
+      try {
+        created = await getAgentMailInbox(mail);
+      } catch (error) {
+        await ctx.runMutation(internal.inboxes.releaseInboxClaim, { needId: args.needId, claimedAt: claim.claimedAt });
+        throw error;
+      }
+    } else {
+      operation = "create_inbox";
+      try {
+        await checkLimit(ctx, "sendRfq", `inbox:${String(args.needId)}`, identity.tokenIdentifier);
+      } catch (error) {
+        await ctx.runMutation(internal.inboxes.releaseInboxClaim, { needId: args.needId, claimedAt: claim.claimedAt });
+        throw error;
+      }
+      const username = `reliefgrid-${String(args.needId).slice(0, 8).toLowerCase()}`;
+      created = await createAgentMailInbox(mail, username, `ReliefGrid ${need.item}`.slice(0, 60));
+    }
+    const inboxRowId: string = await ctx.runMutation(internal.inboxes.ensureInbox, {
       needId: args.needId,
       inboxId: created.inboxId,
       email: created.email,
     });
     void inboxRowId;
-    await ctx.runMutation(api.health.recordProviderRun, {
+    await ctx.runMutation(internal.health.recordProviderRun, {
       provider: "agentmail",
-      operation: "create_inbox",
+      operation,
       status: "live",
       latencyMs: created.latencyMs,
       requestId: created.inboxId,
       meta: JSON.stringify({ needId: String(args.needId) }),
+      ownerId: identity.tokenIdentifier,
     });
     return { inboxId: created.inboxId, email: created.email, providerStatus: "live" as const };
   },

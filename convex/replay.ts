@@ -1,10 +1,12 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
+import { requireIncidentOwner } from "./model/auth";
 
 export const listTimeline = query({
   args: { incidentId: v.id("incidents") },
   returns: v.any(),
   handler: async (ctx, args) => {
+    await requireIncidentOwner(ctx, args.incidentId);
     return await ctx.db
       .query("auditEvents")
       .withIndex("by_incident_at", (q) => q.eq("incidentId", args.incidentId))
@@ -19,6 +21,8 @@ export const getIncidentAt = query({
   handler: async (ctx, args) => {
     const event = await ctx.db.get(args.eventId);
     if (!event) throw new Error("Audit event not found");
+    if (!event.incidentId) throw new Error("Audit event is not shareable");
+    await requireIncidentOwner(ctx, event.incidentId);
     // Legacy events without snapshots replay as metadata-only so the UI
     // can never crash on a partial audit trail.
     if (!event.snapshot) {

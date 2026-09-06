@@ -10,6 +10,8 @@ build/
 out/
 .turbo/
 *.tsbuildinfo
+playwright-report/
+test-results/
 
 # Convex
 convex/_generated/

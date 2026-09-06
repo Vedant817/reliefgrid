@@ -12,6 +12,8 @@ export const providerLimits = new RateLimiter(components.rateLimiter, {
   draftClarification: { kind: "fixed window", rate: 60, period: HOUR },
   sendClarification: { kind: "fixed window", rate: 30, period: HOUR },
   sendHoldNotice: { kind: "fixed window", rate: 30, period: HOUR },
+  providerUser: { kind: "fixed window", rate: 120, period: HOUR },
+  providerGlobal: { kind: "fixed window", rate: 1000, period: HOUR },
 });
 
 export async function checkLimit(
@@ -24,9 +26,16 @@ export async function checkLimit(
     | "sendClarification"
     | "sendHoldNotice",
   key: string,
+  ownerId?: string,
 ) {
-  const status = await providerLimits.limit(ctx, name, { key });
-  if (!status.ok) {
-    throw new Error(`rate limited: ${name} retry after ${status.retryAfter ?? "?"}ms`);
-  }
+  const checks = await Promise.all([
+    providerLimits.check(ctx, name, { key }),
+    providerLimits.check(ctx, "providerGlobal", { key: "deployment" }),
+    ...(ownerId ? [providerLimits.check(ctx, "providerUser", { key: ownerId })] : []),
+  ]);
+  const blocked = checks.find((status) => !status.ok);
+  if (blocked) throw new Error(`provider rate limit reached; retry after ${blocked.retryAfter ?? "?"}ms`);
+  if (ownerId) await providerLimits.limit(ctx, "providerUser", { key: ownerId });
+  await providerLimits.limit(ctx, "providerGlobal", { key: "deployment" });
+  await providerLimits.limit(ctx, name, { key });
 }

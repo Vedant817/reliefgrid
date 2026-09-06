@@ -39,6 +39,10 @@ export function allocateOffers(
       rejected.push({ ...o, reason: `Late: arrives ${new Date(o.arrivalAt).toLocaleString()} after deadline ${new Date(need.deadlineAt).toLocaleString()}` });
       continue;
     }
+    if (o.certStatus === "failed") {
+      rejected.push({ ...o, reason: "Evidence check failed" });
+      continue;
+    }
     if (need.certRequired && o.certStatus !== "verified") {
       rejected.push({ ...o, reason: `Cert unverified: requires ${need.certRequired}, got ${o.certStatus}` });
       continue;
@@ -70,15 +74,16 @@ export function allocateOffers(
     }
     // Check if adding this would exceed budget if we fulfill fully
     const needed = need.qty - totalQty;
-    const takeQty = Math.min(o.qty, needed);
-    const cost = takeQty * o.unitPriceCents;
-    if (totalCost + cost > need.budgetCents) {
-      // Try partial if allowed and cheaper overall? For MVP, reject if over budget
-      // But allow partial consumption: if we can take fewer to stay in budget, do so
-      // For simplicity, reject this offer if it exceeds budget
-      rejected.push({ ...o, reason: `Over budget: ${totalCost + cost} > ${need.budgetCents} cents` });
+    let takeQty = Math.min(o.qty, needed);
+    const remainingBudget = need.budgetCents - totalCost;
+    if (takeQty * o.unitPriceCents > remainingBudget) {
+      takeQty = need.partialAllowed ? Math.min(takeQty, Math.floor(remainingBudget / o.unitPriceCents)) : 0;
+    }
+    if (takeQty <= 0) {
+      rejected.push({ ...o, reason: `Over budget: no purchasable quantity remains within ${need.budgetCents} cents` });
       continue;
     }
+    const cost = takeQty * o.unitPriceCents;
     // If offer larger than needed, we only allocate needed portion
     // Clone with adjusted qty for allocation
     const allocated = takeQty === o.qty ? o : { ...o, qty: takeQty };
@@ -98,12 +103,7 @@ export function allocateOffers(
 
   // Also any eligible that wasn't iterated because of budget etc already in rejected
 
-  const feasible = totalQty >= need.qty || (need.partialAllowed && totalQty > 0);
-  // If not feasible and partial not allowed, we should consider no selection?
-  // For strict non-partial, if not enough qty, mark not feasible
-  if (!need.partialAllowed && totalQty < need.qty) {
-    // Move selected to rejected? Keep selected but mark infeasible
-  }
+  const feasible = totalQty >= need.qty;
 
   const shortfallQty = Math.max(0, need.qty - totalQty);
   const trace = [

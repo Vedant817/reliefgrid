@@ -1,12 +1,26 @@
 import { v } from "convex/values";
-import { internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
 import { offersByNeed } from "./offerTotals";
+import { requireNeedOwner, requireOfferOwner } from "./model/auth";
 
 const evidenceSpan = v.object({ confidence: v.number(), start: v.number(), end: v.number(), quote: v.string() });
 const fieldEvidence = v.object({ qty: evidenceSpan, price: evidenceSpan, arrival: evidenceSpan, cert: evidenceSpan });
 
-export const upsertOfferVersion = mutation({
+export const getExtractionContext = internalQuery({
+  args: { needId: v.id("needs"), supplierId: v.id("suppliers") },
+  returns: v.object({ ownerId: v.string() }),
+  handler: async (ctx, args) => {
+    const need = await ctx.db.get(args.needId);
+    const supplier = await ctx.db.get(args.supplierId);
+    if (!need || !supplier) throw new Error("Extraction context not found");
+    const incident = await ctx.db.get(need.incidentId);
+    if (!incident?.ownerId || supplier.ownerId !== incident.ownerId) throw new Error("Supplier does not belong to the incident owner");
+    return { ownerId: incident.ownerId };
+  },
+});
+
+export const upsertOfferVersion = internalMutation({
   args: {
     needId: v.id("needs"),
     supplierId: v.id("suppliers"),
@@ -27,35 +41,43 @@ export const upsertOfferVersion = mutation({
     if (!args.rawEmailId.trim()) throw new Error("rawEmailId must not be empty");
     const need = await ctx.db.get(args.needId);
     if (!need) throw new Error("Need not found");
+    if (args.conditions.length > 50 || args.conditions.some((condition) => condition.length > 500)) throw new Error("Offer conditions exceed limits");
+    const existingOffer = await ctx.db
+      .query("offers")
+      .withIndex("by_need_and_supplier", (q) => q.eq("needId", args.needId).eq("supplierId", args.supplierId))
+      .first();
+    const activeRecall = existingOffer
+      ? await ctx.db
+          .query("sourceChecks")
+          .withIndex("by_offer_recall_state", (q) =>
+            q.eq("offerId", existingOffer._id).eq("type", "recall").eq("status", "failed").eq("sourceAuthority", "authoritative").eq("matched", true),
+          )
+          .first()
+      : null;
+    const certStatus = activeRecall ? "failed" : args.certStatus;
 
     // Replay guard: same email seen before must carry identical terms.
-    const priorVersions = await ctx.db
+    const sameEmail = await ctx.db
       .query("offerVersions")
-      .withIndex("by_need", (q) => q.eq("needId", args.needId))
-      .collect();
-    const sameEmail = priorVersions.find(
-      (ver) => ver.supplierId === args.supplierId && ver.rawEmailId === args.rawEmailId,
-    );
+      .withIndex("by_need_supplier_email", (q) => q.eq("needId", args.needId).eq("supplierId", args.supplierId).eq("rawEmailId", args.rawEmailId))
+      .first();
     if (sameEmail) {
       const identical =
         sameEmail.qty === args.qty &&
         sameEmail.unitPriceCents === args.unitPriceCents &&
         sameEmail.arrivalAt === args.arrivalAt &&
-        sameEmail.certStatus === args.certStatus;
+        sameEmail.certStatus === certStatus;
       if (!identical) throw new Error("duplicate email with divergent terms rejected");
-      const existingOffer = await ctx.db
-        .query("offers")
-        .withIndex("by_need", (q) => q.eq("needId", args.needId))
-        .collect()
-        .then((offers) => offers.find((o) => o.supplierId === args.supplierId));
       if (existingOffer) return existingOffer._id;
     }
 
-    const existingOffer = await ctx.db
-      .query("offers")
-      .withIndex("by_need", (q) => q.eq("needId", args.needId))
-      .collect()
-      .then((offers) => offers.find((o) => o.supplierId === args.supplierId));
+    if (!existingOffer) {
+      const offerCount = (await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", args.needId)).take(200)).length;
+      if (offerCount >= 200) throw new Error("This need has reached the 200-offer limit");
+    } else {
+      const versionCount = (await ctx.db.query("offerVersions").withIndex("by_offer", (q) => q.eq("offerId", existingOffer._id)).take(500)).length;
+      if (versionCount >= 500) throw new Error("This offer has reached the 500-version history limit");
+    }
 
     // Create version
     const versionId = await ctx.db.insert("offerVersions", {
@@ -64,7 +86,7 @@ export const upsertOfferVersion = mutation({
       qty: args.qty,
       unitPriceCents: args.unitPriceCents,
       arrivalAt: args.arrivalAt,
-      certStatus: args.certStatus,
+      certStatus,
       conditions: args.conditions,
       confidence: args.confidence,
       fieldEvidence: args.fieldEvidence,
@@ -80,7 +102,7 @@ export const upsertOfferVersion = mutation({
         qty: args.qty,
         unitPriceCents: args.unitPriceCents,
         arrivalAt: args.arrivalAt,
-        certStatus: args.certStatus,
+        certStatus,
         conditions: args.conditions,
         confidence: args.confidence,
         fieldEvidence: args.fieldEvidence,
@@ -111,7 +133,7 @@ export const upsertOfferVersion = mutation({
         qty: args.qty,
         unitPriceCents: args.unitPriceCents,
         arrivalAt: args.arrivalAt,
-        certStatus: args.certStatus,
+        certStatus,
         conditions: args.conditions,
         confidence: args.confidence,
         fieldEvidence: args.fieldEvidence,
@@ -139,19 +161,22 @@ export const upsertOfferVersion = mutation({
 
 export const listOffersByNeed = query({
   args: { needId: v.id("needs") },
+  returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    await requireNeedOwner(ctx, args.needId);
     const offers = await ctx.db
       .query("offers")
       .withIndex("by_need", (q) => q.eq("needId", args.needId))
-      .collect();
+      .take(200);
     const enriched = await Promise.all(
       offers.map(async (o) => {
         const supplier = await ctx.db.get(o.supplierId);
+        const version = o.currentVersionId ? await ctx.db.get(o.currentVersionId) : null;
         const checks = await ctx.db
           .query("sourceChecks")
           .withIndex("by_offer", (q) => q.eq("offerId", o._id))
-          .collect();
-        return { ...o, supplier, sourceChecks: checks };
+          .take(20);
+        return { ...o, supplier, sourceChecks: checks, rawBody: version?.rawBody };
       }),
     );
     return enriched;
@@ -160,34 +185,18 @@ export const listOffersByNeed = query({
 
 export const listOfferVersions = query({
   args: { needId: v.id("needs") },
+  returns: v.array(v.any()),
   handler: async (ctx, args) => {
+    await requireNeedOwner(ctx, args.needId);
     return await ctx.db
       .query("offerVersions")
       .withIndex("by_need", (q) => q.eq("needId", args.needId))
       .order("desc")
-      .collect();
+      .take(200);
   },
 });
 
-export const listAllOfferVersions = query({
-  args: {},
-  returns: v.any(),
-  handler: async (ctx) => {
-    return await ctx.db.query("offerVersions").order("desc").take(200);
-  },
-});
-
-export const storeOfferEmbedding = mutation({
-  args: { versionId: v.id("offerVersions"), embedding: v.array(v.number()) },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    if (args.embedding.length !== 768) throw new Error("embedding must be 768 dimensions");
-    await ctx.db.patch(args.versionId, { embedding: args.embedding });
-    return null;
-  },
-});
-
-export const listAllOffers = query({
+export const listAllOffers = internalQuery({
   args: { limit: v.optional(v.number()) },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -199,4 +208,13 @@ export const getOfferForClarification = internalQuery({
   args: { offerId: v.id("offers") },
   returns: v.any(),
   handler: async (ctx, args) => await ctx.db.get(args.offerId),
+});
+
+export const getOfferForVerification = query({
+  args: { offerId: v.id("offers") },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const access = await requireOfferOwner(ctx, args.offerId);
+    return { ...access.offer, need: access.need, ownerId: access.ownerId };
+  },
 });

@@ -10,21 +10,36 @@ type EvidenceDriftProps = {
 
 export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) {
   const state = useQuery(api.evidenceDrift.getEvidenceDriftState, needId ? { needId } : {});
-  const activateRecall = useMutation(api.evidenceDrift.activateRecall);
+  const activateRecall = useAction(api.actions.recheckSource.activateRecallAndRecheck);
   const addReplacement = useMutation(api.evidenceDrift.addReplacementOffer);
   const approveNotice = useAction(api.actions.holdNotice.approveAndSendHoldNotice);
   const bulletin = state?.bulletin;
   const notice = state?.holdNotice;
+  const canSendHoldNotice = Boolean(state?.canSendHoldNotice);
   const recalled = bulletin?.state === "RECALL_ACTIVE";
   const startRecovery = useMutation(api.recoveryWorkflow.startRecovery);
   const approveRecovery = useMutation(api.recoveryWorkflow.approveRecovery);
   const [workflowId, setWorkflowId] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const wfStatus: any = useQuery(
     api.recoveryWorkflow.recoveryStatus,
     workflowId ? { workflowId } : "skip",
   );
   const wfState: string = wfStatus?.type ?? "idle";
   const wfAwaiting = wfStatus?.type === "inProgress" && (wfStatus?.running ?? []).some((s: any) => s.kind === "event");
+
+  const run = async (name: string, operation: () => Promise<unknown>) => {
+    setPending(name);
+    setError(null);
+    try {
+      await operation();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : `${name} failed`);
+    } finally {
+      setPending(null);
+    }
+  };
 
   return (
     <section className={`rounded-2xl border overflow-hidden ${recalled ? "bg-red-950/30 border-red-500/40" : "bg-[#111827] border-[#1e2d4a]"}`}>
@@ -39,13 +54,13 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
       </div>
       <div className="p-4">
         <p className="text-xs text-slate-400 leading-relaxed">{bulletin?.body ?? "Waiting for demo bulletin."}</p>
-        <a href="/demo-bulletin" target="_blank" className="inline-block mt-2 text-xs text-cyan-300 underline underline-offset-4">Open controlled public bulletin</a>
+        <a href={bulletin ? `/demo-bulletin?id=${encodeURIComponent(String(bulletin._id))}` : undefined} target="_blank" rel="noreferrer" aria-disabled={!bulletin} className="inline-block mt-2 text-xs text-cyan-300 underline underline-offset-4 aria-disabled:opacity-40">Open controlled public bulletin</a>
         <div className="mt-4 grid grid-cols-2 gap-2">
-          <button disabled={!needId || recalled} onClick={() => void activateRecall({})} className="px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-200 text-xs font-semibold disabled:opacity-40">
-            Flip source to recall
+          <button disabled={!needId || recalled || Boolean(pending)} onClick={() => needId && void run("Evidence recheck", () => activateRecall({ needId }))} className="px-3 py-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-200 text-xs font-semibold disabled:opacity-40">
+            {pending === "Evidence recheck" ? "Rechecking…" : "Recheck changed source"}
           </button>
-          <button disabled={!recalled || coverage >= target} onClick={() => void addReplacement({})} className="px-3 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-xs font-semibold disabled:opacity-40">
-            Add replacement
+          <button disabled={!needId || !recalled || coverage >= target || Boolean(pending)} onClick={() => needId && void run("Replacement", () => addReplacement({ needId }))} className="px-3 py-2 rounded-xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-200 text-xs font-semibold disabled:opacity-40">
+            {pending === "Replacement" ? "Adding…" : "Add replacement"}
           </button>
         </div>
         {recalled && (
@@ -60,13 +75,14 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
             <div className="text-xs font-semibold mt-1">{notice.subject}</div>
             <p className="text-[11px] text-slate-400 mt-1">{notice.body}</p>
             {notice.status === "draft" && (
-              <button onClick={() => void approveNotice({ noticeId: notice._id, approvedBy: "coordinator@reliefgrid.test" })} className="mt-2 px-3 py-1.5 rounded-full bg-amber-400 text-[#171006] text-xs font-bold">
-                Approve & send hold notice
+              <button disabled={!canSendHoldNotice || Boolean(pending)} onClick={() => void run("Hold notice", () => approveNotice({ noticeId: notice._id }))} className="mt-2 px-3 py-1.5 rounded-full bg-amber-400 text-[#171006] text-xs font-bold disabled:opacity-40">
+                {pending === "Hold notice" ? "Sending…" : "Approve & send hold notice"}
               </button>
             )}
+            {notice.status === "draft" && !canSendHoldNotice && <div className="mt-2 text-[10px] text-slate-500">Draft retained: delivery requires a real sent supplier thread.</div>}
           </div>
         )}
-        <div className="mt-3 text-[10px] text-slate-500 mono">Offer verification runs live via Firecrawl; the controlled bulletin is local-only so its recheck is simulated. Hold-notice send runs live via AgentMail after approval.</div>
+        <div className="mt-3 text-[10px] text-slate-500 mono">Firecrawl reads the public Convex bulletin before the source check can invalidate the plan. Hold notices remain human-approved.</div>
         <div className="mt-3 rounded-xl border border-violet-400/20 bg-violet-400/5 p-3">
           <div className="flex items-center justify-between gap-2">
             <div className="text-[11px] tracking-[0.12em] uppercase text-violet-300">Guided recovery · durable workflow</div>
@@ -74,18 +90,20 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
           </div>
           <div className="mt-2 grid grid-cols-2 gap-2">
             <button
-              disabled={!needId}
+              disabled={!needId || !recalled || coverage >= target || Boolean(pending)}
               onClick={async () => {
-                const res = await startRecovery({ needId });
-                setWorkflowId(res.workflowId);
+                await run("Guided recovery", async () => {
+                  const res = await startRecovery({ needId });
+                  setWorkflowId(res.workflowId);
+                });
               }}
               className="px-3 py-2 rounded-xl bg-violet-500/15 border border-violet-500/30 text-violet-200 text-xs font-semibold disabled:opacity-40"
             >
               Start guided recovery
             </button>
             <button
-              disabled={!workflowId || !wfAwaiting}
-              onClick={() => workflowId && void approveRecovery({ workflowId })}
+              disabled={!workflowId || !wfAwaiting || Boolean(pending)}
+              onClick={() => workflowId && void run("Recovery approval", () => approveRecovery({ workflowId }))}
               className="px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs font-semibold disabled:opacity-40"
             >
               Approve recovery
@@ -93,6 +111,7 @@ export function EvidenceDrift({ needId, coverage, target }: EvidenceDriftProps) 
           </div>
           <div className="mt-2 text-[10px] mono text-slate-500">Steps retry and resume; approval pauses the run with zero resource use.</div>
         </div>
+        {error && <div role="alert" className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-xs text-red-200">{error}</div>}
       </div>
     </section>
   );

@@ -26,11 +26,15 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     description: v.optional(v.string()),
+    ownerId: v.optional(v.string()),
+    isDemo: v.optional(v.boolean()),
   })
     .index("by_status", ["status"])
     .index("by_deadline", ["deadlineAt"])
     .index("by_title", ["title"])
-    .searchIndex("search_title", { searchField: "title" }),
+    .index("by_owner", ["ownerId"])
+    .index("by_owner_and_title", ["ownerId", "title"])
+    .searchIndex("search_title", { searchField: "title", filterFields: ["ownerId"] }),
 
   needs: defineTable({
     incidentId: v.id("incidents"),
@@ -39,9 +43,14 @@ export default defineSchema({
     deadlineAt: v.number(),
     budgetCents: v.number(),
     certRequired: v.optional(v.string()), // e.g. "NSF/ANSI 53"
+    evidenceKey: v.optional(v.string()), // exact product/model/lot identifier expected in external evidence
     partialAllowed: v.boolean(),
     status: v.string(),
     createdAt: v.number(),
+    unit: v.optional(v.string()),
+    deliveryLocation: v.optional(v.string()),
+    timezone: v.optional(v.string()),
+    currency: v.optional(v.string()),
   })
     .index("by_incident", ["incidentId"])
     .index("by_status", ["status"])
@@ -53,9 +62,12 @@ export default defineSchema({
     region: v.string(),
     verified: v.boolean(),
     createdAt: v.number(),
+    ownerId: v.optional(v.string()),
   })
     .index("by_email", ["contactEmail"])
-    .searchIndex("search_name", { searchField: "name" }),
+    .index("by_owner", ["ownerId"])
+    .index("by_owner_and_email", ["ownerId", "contactEmail"])
+    .searchIndex("search_name", { searchField: "name", filterFields: ["ownerId"] }),
 
   // Supplier evidence attachments (cert PDFs, spec photos). Files live in
   // Convex storage; tables store only the storage ID, never external URLs.
@@ -78,9 +90,14 @@ export default defineSchema({
     lastReplyAt: v.optional(v.number()),
     agentmailThreadId: v.optional(v.string()),
     agentmailMessageId: v.optional(v.string()),
+    sendClaimedAt: v.optional(v.number()),
+    pendingDispatchKey: v.optional(v.string()),
+    previousStatus: v.optional(v.string()),
   })
     .index("by_need", ["needId"])
-    .index("by_agentmail_thread", ["agentmailThreadId"]),
+    .index("by_need_and_supplier", ["needId", "supplierId"])
+    .index("by_agentmail_thread", ["agentmailThreadId"])
+    .index("by_agentmail_message", ["agentmailMessageId"]),
 
   offers: defineTable({
     needId: v.id("needs"),
@@ -97,7 +114,13 @@ export default defineSchema({
     language: v.optional(v.string()),
     status: v.string(), // active, superseded
     updatedAt: v.number(),
-  }).index("by_need", ["needId"]),
+    currency: v.optional(v.string()),
+    freightCents: v.optional(v.number()),
+    minimumOrderQty: v.optional(v.number()),
+    lotSize: v.optional(v.number()),
+  })
+    .index("by_need", ["needId"])
+    .index("by_need_and_supplier", ["needId", "supplierId"]),
 
   offerVersions: defineTable({
     offerId: v.optional(v.id("offers")),
@@ -119,10 +142,7 @@ export default defineSchema({
   })
     .index("by_offer", ["offerId"])
     .index("by_need", ["needId"])
-    .vectorIndex("by_embedding", {
-      vectorField: "embedding",
-      dimensions: 768,
-    }),
+    .index("by_need_supplier_email", ["needId", "supplierId", "rawEmailId"]),
 
   sourceChecks: defineTable({
     offerId: v.id("offers"),
@@ -132,7 +152,13 @@ export default defineSchema({
     status: v.string(), // verified, unverified, needs_review, failed
     reason: v.string(),
     type: v.string(), // cert, recall, spec
-  }).index("by_offer", ["offerId"]),
+    claim: v.optional(v.string()),
+    sourceAuthority: v.optional(v.union(v.literal("authoritative"), v.literal("supporting"))),
+    contentHash: v.optional(v.string()),
+    matched: v.optional(v.boolean()),
+  })
+    .index("by_offer", ["offerId"])
+    .index("by_offer_recall_state", ["offerId", "type", "status", "sourceAuthority", "matched"]),
 
   allocationPlans: defineTable({
     needId: v.id("needs"),
@@ -160,6 +186,20 @@ export default defineSchema({
     notes: v.optional(v.string()),
     replacedPlanIds: v.optional(v.array(v.id("allocationPlans"))),
   }).index("by_plan", ["planId"]),
+
+  awardNotices: defineTable({
+    planId: v.id("allocationPlans"),
+    threadId: v.id("rfqThreads"),
+    kind: v.union(v.literal("award"), v.literal("decline")),
+    status: v.union(v.literal("sending"), v.literal("sent"), v.literal("failed"), v.literal("skipped_demo")),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    updatedAt: v.number(),
+    sendClaimedAt: v.optional(v.number()),
+  })
+    .index("by_plan", ["planId"])
+    .index("by_thread_and_kind", ["threadId", "kind"])
+    .index("by_plan_thread_kind", ["planId", "threadId", "kind"]),
 
   deliveries: defineTable({
     needId: v.id("needs"),
@@ -192,6 +232,11 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_need", ["needId"]),
 
+  inboxClaims: defineTable({
+    needId: v.id("needs"),
+    claimedAt: v.number(),
+  }).index("by_need", ["needId"]),
+
   // Provider execution ledger — safe proof only, never secrets or message bodies
   providerRuns: defineTable({
     provider: v.union(
@@ -213,9 +258,11 @@ export default defineSchema({
     requestId: v.optional(v.string()),
     at: v.number(),
     meta: v.optional(v.string()),
+    ownerId: v.optional(v.string()),
   })
     .index("by_provider", ["provider"])
-    .index("by_at", ["at"]),
+    .index("by_at", ["at"])
+    .index("by_owner_and_at", ["ownerId", "at"]),
 
   // Controlled demo bulletin for Evidence Drift (11.2) — public, synthetic
   demoBulletins: defineTable({
@@ -224,17 +271,41 @@ export default defineSchema({
     state: v.union(v.literal("CLEAR"), v.literal("RECALL_ACTIVE")),
     body: v.string(),
     updatedAt: v.number(),
-  }).index("by_key", ["key"]),
+    ownerId: v.optional(v.string()),
+  })
+    .index("by_key", ["key"])
+    .index("by_owner_and_key", ["ownerId", "key"]),
 
   holdNotices: defineTable({
     needId: v.id("needs"),
     offerId: v.id("offers"),
-    status: v.union(v.literal("draft"), v.literal("approved"), v.literal("sent"), v.literal("sent_fixture")),
+    status: v.union(v.literal("draft"), v.literal("sending"), v.literal("approved"), v.literal("sent"), v.literal("sent_fixture")),
     subject: v.string(),
     body: v.string(),
     citationUrl: v.string(),
     createdAt: v.number(),
     approvedAt: v.optional(v.number()),
     approvedBy: v.optional(v.string()),
+    dispatchKey: v.optional(v.string()),
+    sendClaimedAt: v.optional(v.number()),
   }).index("by_need", ["needId"]),
+
+  recoveryRuns: defineTable({
+    workflowId: v.string(),
+    needId: v.id("needs"),
+    startedBy: v.string(),
+    startedAt: v.number(),
+  })
+    .index("by_workflow", ["workflowId"])
+    .index("by_need", ["needId"]),
+
+  // Retained for previously persisted assistant threads. No public API exposes it.
+  coordinatorThreads: defineTable({
+    threadId: v.string(),
+    ownerId: v.string(),
+    createdAt: v.number(),
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_owner", ["ownerId"]),
+
 });

@@ -12,36 +12,20 @@ import { EvidenceDrift } from "./components/EvidenceDrift";
 import { DemoBulletin } from "./pages/DemoBulletin";
 import { CounterfactualLab } from "./components/CounterfactualLab";
 import { DecisionReplay, ReplayBoundary } from "./components/DecisionReplay";
-import { CoordinatorChat } from "./components/CoordinatorChat";
-import { getSessionAlias } from "./lib/session";
-import usePresence from "@convex-dev/presence/react";
-
-function OnlineCoordinators({ roomId }: { roomId?: string }) {
-  const alias = getSessionAlias();
-  const state = usePresence(api.presence, roomId ?? "lobby", alias);
-  const others = (state ?? []).filter((p: any) => p.userId !== alias).slice(0, 4);
-  if (!others.length) return null;
-  return (
-    <span className="hidden xl:inline-flex items-center gap-1.5 text-[11px] text-slate-400">
-      <span className="flex -space-x-1.5">
-        {others.map((p: any) => (
-          <span key={p.userId} title={p.userId} className="w-5 h-5 rounded-full bg-cyan-500/20 border border-cyan-400/40 grid place-items-center text-[9px] text-cyan-300">
-            {(p.userId ?? "?").slice(-2)}
-          </span>
-        ))}
-      </span>
-      {others.length} online
-    </span>
-  );
-}
+import { NewIncidentForm } from "./components/NewIncidentForm";
+import { SupplierOutreach } from "./components/SupplierOutreach";
 
 export default function App() {
+  const demoMode = new URLSearchParams(window.location.search).get("demo") === "1";
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const { signIn } = useAuthActions();
+  const [authError, setAuthError] = useState<string | null>(null);
   useEffect(() => {
-    if (!authLoading && !isAuthenticated) void signIn("anonymous");
-  }, [authLoading, isAuthenticated, signIn]);
-  const allIncidents = useQuery(api.incidents.listIncidents) ?? [];
+    if (!authLoading && !isAuthenticated && !authError) {
+      void signIn("anonymous").catch((cause) => setAuthError(cause instanceof Error ? cause.message : "Could not start a secure workspace"));
+    }
+  }, [authError, authLoading, isAuthenticated, signIn]);
+  const allIncidents = useQuery(api.incidents.listIncidents, isAuthenticated ? {} : "skip") ?? [];
   const [incidentSearch, setIncidentSearch] = useState("");
   const searchedIncidents: any = useQuery(
     api.search.searchIncidents,
@@ -60,14 +44,14 @@ export default function App() {
   ) ?? [];
 
   const [selectedNeedId, setSelectedNeedId] = useState<string | null>(null);
-  const activeNeed = (needs.find((n) => n._id === selectedNeedId) ?? needs[0] ?? null) as any;
+  const activeNeed = (needs.find((n: any) => n._id === selectedNeedId) ?? needs[0] ?? null) as any;
 
   const offers = useQuery(
     api.offers.listOffersByNeed,
     activeNeed ? { needId: activeNeed._id } : "skip",
   ) ?? [];
 
-  const suppliers = useQuery(api.suppliers.listSuppliers) ?? [];
+  const suppliers = useQuery(api.suppliers.listSuppliers, isAuthenticated ? {} : "skip") ?? [];
 
   const plans = useQuery(
     api.allocations.listAllocationPlans,
@@ -87,11 +71,13 @@ export default function App() {
 
   const resetDemo = useMutation(api.demo.resetDemo);
   const createIncident = useMutation(api.incidents.createIncident);
+  const createNeed = useMutation(api.needs.createNeed);
   const computeAllocation = useMutation(api.allocations.computeAllocation);
   const approvePlan = useMutation(api.allocations.approvePlan);
 
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [showNewIncident, setShowNewIncident] = useState(false);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -112,25 +98,27 @@ export default function App() {
     }
   };
 
-  const handleCreateNeed = async () => {
-    if (!activeIncident) {
-      setBusy(true);
-      try {
-        const incidentId: any = await createIncident({
-          title: "Flood Shelter — North District",
-          description: "Emergency shelter needs water filtration for 200 residents. Deadline today 18:00.",
-          deadlineAt: Date.now() + 6 * 60 * 60 * 1000,
-        });
-        setSelectedIncidentId(incidentId);
-        showToast("Incident created — now add a need");
-      } catch (e: any) {
-        showToast(e.message);
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-    showToast("Use Reset Demo to create the canonical 100-filter need");
+  const handleCreateRequirement = async (values: any) => {
+    const deadlineAt = new Date(values.deadlineLocal).getTime();
+    const incidentId: any = await createIncident({ title: values.title, description: values.description || undefined, deadlineAt });
+    const needId: any = await createNeed({
+      incidentId,
+      item: values.item,
+      qty: values.qty,
+      deadlineAt,
+      budgetCents: Math.round(values.budgetDollars * 100),
+      certRequired: values.certification || undefined,
+      evidenceKey: values.evidenceKey || undefined,
+      partialAllowed: true,
+      unit: "units",
+      deliveryLocation: values.deliveryLocation,
+      timezone: values.timezone,
+      currency: "USD",
+    });
+    setSelectedIncidentId(incidentId);
+    setSelectedNeedId(needId);
+    setShowNewIncident(false);
+    showToast("Requirement created — add suppliers and approve outreach");
   };
 
   const handleRecompute = async () => {
@@ -150,8 +138,8 @@ export default function App() {
     if (!latestPlan) return;
     setBusy(true);
     try {
-      await approvePlan({ planId: latestPlan._id, approvedBy: "coordinator@reliefgrid.test" });
-      showToast("Allocation approved — award notices sent");
+      await approvePlan({ planId: latestPlan._id });
+      showToast("Allocation approved — supplier notices queued");
     } catch (e: any) {
       showToast(e.message);
     } finally {
@@ -164,6 +152,21 @@ export default function App() {
   };
 
   if (window.location.pathname === "/demo-bulletin") return <DemoBulletin />;
+
+  if (authError && !isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-[#0a0e1a] text-slate-300 grid place-items-center p-6 text-center">
+        <div>
+          <div className="font-semibold text-red-200">Secure workspace unavailable</div>
+          <div className="mt-2 max-w-md text-sm text-slate-400">{authError}</div>
+          <button onClick={() => setAuthError(null)} className="mt-4 rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#0a0e1a]">Retry</button>
+        </div>
+      </div>
+    );
+  }
+  if (authLoading || !isAuthenticated) {
+    return <div className="min-h-screen bg-[#0a0e1a] text-slate-300 grid place-items-center">Starting a secure workspace…</div>;
+  }
 
   return (
     <div className="min-h-screen bg-[#0a0e1a] text-slate-200">
@@ -182,7 +185,6 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-2">
-            <OnlineCoordinators roomId={(activeIncidentId as string | undefined) ?? "lobby"} />
             <span className="hidden lg:inline text-xs text-slate-400 mono">
               {activeIncident ? `${needs.length} needs · ${offers.length} offers` : "No incident"}
             </span>
@@ -192,16 +194,16 @@ export default function App() {
               placeholder="Search incidents…"
               className="hidden md:inline-block w-40 px-3 py-2 rounded-full bg-[#1a2332] border border-[#1e2d4a] text-xs placeholder:text-slate-500 focus:outline-none focus:border-cyan-400/40"
             />
-            <button
+            {demoMode && <button
               onClick={handleSeed}
               disabled={busy}
               className="px-4 py-2 rounded-full bg-white text-[#0a0e1a] text-sm font-semibold hover:bg-slate-100 disabled:opacity-50"
             >
               {busy ? "..." : "Reset Demo"}
-            </button>
+            </button>}
             <button
-              onClick={handleCreateNeed}
-              className="hidden md:inline-flex px-4 py-2 rounded-full bg-[#1a2332] border border-[#1e2d4a] text-sm font-medium hover:bg-[#1e2d4a]"
+              onClick={() => setShowNewIncident(true)}
+              className="inline-flex px-3 md:px-4 py-2 rounded-full bg-[#1a2332] border border-[#1e2d4a] text-xs md:text-sm font-medium hover:bg-[#1e2d4a]"
             >
               New Incident
             </button>
@@ -239,7 +241,7 @@ export default function App() {
           </div>
           <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
             <div className="text-[11px] tracking-[0.14em] uppercase text-slate-400">Suppliers</div>
-            <div className="text-lg font-semibold mt-1">{threads.length || suppliers.length} <span className="text-sm font-normal text-slate-400">contacted</span></div>
+            <div className="text-lg font-semibold mt-1">{threads.length} <span className="text-sm font-normal text-slate-400">contacted</span></div>
             <div className="text-xs text-slate-400 mt-1">{offers.length} offers · {offers.filter((o: any) => o.certStatus === "verified").length} verified</div>
           </div>
         </div>
@@ -249,7 +251,7 @@ export default function App() {
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6 py-4 grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left: Incident Board */}
         <div className="lg:col-span-3 space-y-4">
-          <DemoRail
+          {demoMode && <DemoRail
             hasNeed={Boolean(activeNeed)}
             threadCount={threads.length}
             offerCount={offers.length}
@@ -259,7 +261,7 @@ export default function App() {
             planStatus={latestPlan?.status}
             busy={busy}
             onReset={handleSeed}
-          />
+          />}
           <IncidentBoard
             incidents={incidents}
             needs={needs}
@@ -268,12 +270,13 @@ export default function App() {
             onSelectIncident={(id: string) => setSelectedIncidentId(id)}
             onSelectNeed={(id: string) => setSelectedNeedId(id)}
           />
-          <EvidenceDrift
+          {!demoMode && <SupplierOutreach needId={activeNeed?._id} suppliers={suppliers} threads={threads} />}
+          {demoMode && <EvidenceDrift
             needId={activeNeed?._id}
             coverage={latestPlan?.totalQty ?? 0}
             target={activeNeed?.qty ?? 0}
-          />
-          <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
+          />}
+          {demoMode && <div className="rounded-2xl bg-[#111827] border border-[#1e2d4a] p-4">
             <div className="text-xs tracking-[0.14em] uppercase text-slate-400">Demo controls</div>
             <div className="mt-3 grid grid-cols-2 gap-2">
               <button onClick={handleRecompute} disabled={!activeNeed || busy} className="px-3 py-2 rounded-xl bg-[#1a2332] border border-[#1e2d4a] text-xs font-medium disabled:opacity-50">
@@ -287,7 +290,7 @@ export default function App() {
               </button>
             </div>
             <div className="mt-3 text-[11px] leading-relaxed text-slate-500">Reset creates 3 synthetic offers: Apex 70 (EN), BlueRiver 100 late, Casa 30 (ES). Allocation picks 70+30. Extraction runs live via Groq, verification via Firecrawl, RFQ sends via AgentMail — ledger below proves each run.</div>
-          </div>
+          </div>}
         </div>
 
         {/* Center: Offer Matrix */}
@@ -300,35 +303,25 @@ export default function App() {
           <AllocationInspector plan={latestPlan} need={activeNeed} offers={offers} />
           <AuditReceipt need={activeNeed} plan={latestPlan} />
           <CounterfactualLab needId={activeNeed?._id} />
-          <CoordinatorChat needId={activeNeed?._id} />
-          <ProviderProof />
+          {demoMode && <details className="rounded-2xl bg-[#111827] border border-[#1e2d4a] overflow-hidden">
+            <summary className="cursor-pointer px-4 py-3 text-xs tracking-[0.14em] uppercase text-slate-400">Judge proof and assistant</summary>
+            <div className="p-3"><ProviderProof /></div>
+          </details>}
         </div>
       </div>
 
-      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 pb-4">
+      {demoMode && <div className="max-w-[1600px] mx-auto px-4 lg:px-6 pb-4">
         <ReplayBoundary key={activeIncident?._id ?? "none"}>
           <DecisionReplay incidentId={activeIncident?._id} />
         </ReplayBoundary>
-      </div>
-
-      {/* Footer proof */}
-      <div className="max-w-[1600px] mx-auto px-4 lg:px-6 pb-8">
-        <div className="rounded-2xl bg-[#0f172a] border border-[#1e2d4a] p-4 flex flex-wrap gap-4 text-xs text-slate-400">
-          <span className="mono">Convex: queries · mutations · actions · httpActions · realtime · audit</span>
-          <span>·</span>
-          <span className="mono">OpenAI: EN/ES extraction → structured offer</span>
-          <span>·</span>
-          <span className="mono">Firecrawl: spec + recall sourceChecks</span>
-          <span>·</span>
-          <span className="mono">AgentMail: inbox-per-need + threaded webhooks</span>
-        </div>
-      </div>
+      </div>}
 
       {toast && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 bg-white text-[#0a0e1a] px-4 py-2 rounded-full text-sm font-medium shadow-xl">
           {toast}
         </div>
       )}
+      {showNewIncident && <NewIncidentForm onCancel={() => setShowNewIncident(false)} onCreate={handleCreateRequirement} />}
     </div>
   );
 }

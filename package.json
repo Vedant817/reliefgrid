@@ -10,28 +10,28 @@
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:e2e:functional": "playwright test --config=playwright.functional.config.ts",
+    "test:e2e:live": "playwright test --config=playwright.live.config.ts",
+    "test:e2e:providers": "playwright test --config=playwright.providers.config.ts"
   },
   "dependencies": {
     "@agentmail/convex": "^0.1.0",
-    "@ai-sdk/groq": "^4.0.37",
-    "@convex-dev/agent": "^0.7.1",
     "@convex-dev/aggregate": "^0.3.1",
     "@convex-dev/auth": "^0.0.95",
-    "@convex-dev/presence": "^0.4.0",
     "@convex-dev/rate-limiter": "^0.3.2",
     "@convex-dev/workflow": "^0.3.12",
     "@firecrawl/firecrawl-convex": "^0.1.1",
-    "ai": "^7.0.93",
     "convex": "^1.27.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.0"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/react": "^18.3.8",
     "@types/react-dom": "^18.3.0",
-    "@vitejs/plugin-react": "^4.3.3",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.5.4",
     "convex-test": "^0.0.56",
     "eslint": "^9.13.0",
@@ -39,7 +39,8 @@
     "postcss": "^8.5.26",
     "tailwindcss": "^3.4.19",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10",
-    "vitest": "^2.1.4"
+    "typescript-eslint": "^8.69.0",
+    "vite": "^8.2.2",
+    "vitest": "^5.0.0"
   }
 }

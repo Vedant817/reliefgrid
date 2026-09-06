@@ -12,7 +12,7 @@ export type LlmConfig = {
 export type ExtractedOffer = {
   qty: number | null;
   unitPriceCents: number | null;
-  arrivalHint: "TODAY_4PM" | "TODAY_5PM" | "TOMORROW_MORNING" | "UNKNOWN";
+  arrivalAtIso: string | null;
   certStatus: "verified" | "unverified" | "needs_review";
   language: "en" | "es";
   conditions: string[];
@@ -43,14 +43,15 @@ export function resolveLlmProvider(env: Record<string, string | undefined> = pro
   return { kind: "mock", baseUrl: null, apiKey: null, model: "deterministic-mock" };
 }
 
-export function buildExtractionPrompt(rawBody: string): { system: string; user: string } {
+export function buildExtractionPrompt(rawBody: string, referenceTimeIso = new Date().toISOString()): { system: string; user: string } {
   const system = [
     "You extract structured supplier-offer fields from a relief-procurement email.",
     "Reply with JSON only, no markdown, matching this schema:",
-    '{"qty": number|null, "unitPriceCents": number|null, "arrivalHint": "TODAY_4PM"|"TODAY_5PM"|"TOMORROW_MORNING"|"UNKNOWN",',
+    '{"qty": number|null, "unitPriceCents": number|null, "arrivalAtIso": string|null,',
     ' "certStatus": "verified"|"unverified"|"needs_review", "language": "en"|"es", "conditions": string[], "confidence": 0..1,',
     ' "fieldConfidences": {"qty": 0..1, "price": 0..1, "arrival": 0..1, "cert": 0..1}}',
     "Use null for any value the email does not state clearly. Never guess quantities or prices.",
+    `Resolve relative delivery phrases against email receipt time ${referenceTimeIso}. Return an ISO-8601 timestamp with an explicit offset; return null when timezone or time is ambiguous.`,
     "certStatus is verified only when the email cites a certification such as NSF/ANSI 53.",
   ].join(" ");
   return { system, user: rawBody };
@@ -66,10 +67,7 @@ export function parseExtractionJson(text: string): ExtractedOffer | null {
   try {
     const cleaned = text.replace(/```json|```/g, "").trim();
     const raw = JSON.parse(cleaned.slice(cleaned.indexOf("{")));
-    const arrivalHint =
-      raw.arrivalHint === "TODAY_4PM" || raw.arrivalHint === "TODAY_5PM" || raw.arrivalHint === "TOMORROW_MORNING"
-        ? raw.arrivalHint
-        : "UNKNOWN";
+    const arrivalAtIso = typeof raw.arrivalAtIso === "string" && Number.isFinite(Date.parse(raw.arrivalAtIso)) ? raw.arrivalAtIso : null;
     const certStatus =
       raw.certStatus === "verified" || raw.certStatus === "unverified" ? raw.certStatus : "needs_review";
     const language = raw.language === "es" ? "es" : "en";
@@ -80,7 +78,7 @@ export function parseExtractionJson(text: string): ExtractedOffer | null {
     return {
       qty,
       unitPriceCents,
-      arrivalHint,
+      arrivalAtIso,
       certStatus,
       language,
       conditions: Array.isArray(raw.conditions) ? raw.conditions.filter((c: unknown) => typeof c === "string") : [],
