@@ -1,20 +1,41 @@
-# Hackathon log
+# ReliefGrid — urgent buying decisions from supplier email, for any small organization
 
-- **Project:** ReliefGrid
-- **Event:** Convex All Gas Hackathon
-- **What it does:** Turns urgent supplier email into a human-approved sourcing plan and freezes that plan when authoritative evidence changes.
-- **Live app:** not deployed
-- **Repo:** none
-- **Frontend:** not deployed
-- **Convex deployment:** https://judicious-rat-761.convex.cloud
-- **Components:** AgentMail, Aggregate, Auth, Firecrawl, Rate Limiter, Workflow
-- **Convex features:** schema, indexes, queries, mutations, actions, signed HTTP actions, crons, realtime subscriptions, workflows, storage, search
-- **Auth:** anonymous judge sessions with server-derived per-user ownership
-- **AI models:** Groq-hosted GPT-OSS for evidence-backed extraction; direct OpenAI supported but not yet proven
-- **Started:** 2026-09-02T17:02:09Z
-- **Last updated:** 2026-09-06T11:19:26Z
+ReliefGrid turns supplier email into comparable quotes, proposes the cheapest workable sourcing plan, and freezes
+that plan the moment the evidence behind it changes. It fits a school ordering 200 chairs by Friday, a clinic
+restocking supplies, or a relief team buying water filters. The AI extracts and cites evidence — it never spends
+money or decides who is eligible; a person always approves.
 
-## Log
+## Status (honest, updated 2026-09-06)
+
+| Item | State |
+|---|---|
+| Live app | Not deployed — runs against the Convex dev deployment during review |
+| Public repo | Not published yet |
+| Demo video | Script at `video/demo-script.md`; recording pending |
+| Social post + submission | Pending (vibeapps.dev deadline Sep 22, 12:00 PM PT) |
+| OpenAI lane | Code-complete, not yet proven — extraction runs live on Groq (GPT-OSS) |
+
+## What each sponsor does (with proof)
+
+| Sponsor | Real work in the product | Proof |
+|---|---|---|
+| AgentMail | Per-need inboxes, approval-gated RFQ sends, signed webhook ingest, thread-matched replies, idempotent sends | Live two-inbox round trip: RFQ sent, reply ingested, Groq extraction persisted (`e2e/providers.spec.ts`) |
+| Firecrawl | Offer verification scrapes, public recall watch (CPSC/FDA/NSF search + scrape), supplier discovery search | Live recall invalidation 100→30→100 (`e2e/live.spec.ts`); recall-watch and discovery exercised live in-browser |
+| Groq (GPT-OSS, OpenAI model family) | Structured offer extraction with quoted evidence spans and abstention on ambiguity | Live EN extraction at 0.99, live abstention on vague email, per-run ledger with request IDs |
+
+## Convex features used
+
+Schema + indexes, queries, mutations, actions (Node), signed HTTP actions, scheduled crons (deadline watchdog),
+realtime subscriptions, durable workflows (guided recovery with human gate), file storage (cert evidence),
+full-text search, pagination, aggregate component (live coverage totals), rate-limiter component, Auth (anonymous
+sessions with server-derived ownership), append-only audit trail with deterministic replay.
+
+## Three-minute demo
+
+`supplier email -> extracted claim -> authoritative evidence -> deterministic plan -> human approval -> changed
+evidence -> frozen plan -> approved recovery`. Full narration in `video/demo-script.md`.
+
+## Build log (process evidence, newest last)
 
 ### 2026-09-02 - working tree
 Set up project for Convex All Gas Hackathon. Installed Convex Agent Skills (33 skills: convex, convex-auth, convex-crons, etc.) and configured Convex MCP server (npx -y convex@latest mcp start) for Opencode. Added hackathon build-log skill at `.agents/skills/convex-hackathon-skill/` and initialized public build log. Project is empty initialization stage — no application code or Convex backend yet (`.agents/skills/convex-hackathon-skill/SKILL.md`, `.agents/skills/convex-hackathon-skill/references/log-format.md`, `opencode.jsonc`).
@@ -87,3 +108,22 @@ Exercised the customer and controlled-judge workspaces in Chromium across deskto
 
 ### 2026-09-06 - AgentMail and Groq round trip re-certified
 The live browser test exposed AgentMail's three-inbox plan limit: the intended shared-inbox fallback was documented but not implemented, so per-need creation failed with a provider 403. Implemented and configured shared-inbox mapping while preserving per-need database records and thread routing. Re-ran through the customer UI using only two controlled AgentMail inboxes: created a requirement and supplier, explicitly approved the RFQ, received it through AgentMail, replied in-thread, passed the signed webhook and exact sender match, and persisted Groq's live extraction as a 25-unit offer at `$4.50`. The recipient inbox was controlled by the same AgentMail account; no outside supplier was contacted.
+
+### 2026-09-06 - professional UI restyle
+Replaced the glossy dark theme with a clean light console: white cards on soft gray, slate type on the system stack, one flat blue accent, and muted status badges. No gradients, glow, or webfonts remain in the app shell. Every workflow, label, and test hook is unchanged; also fixed a visible `$1070 / $$1200` double-dollar typo and a wrapping supplier button found in screenshots. Verified with fresh desktop screenshots plus the full suites (build, lint, 35 tests, smoke, functional, live Firecrawl/workflow).
+
+### 2026-09-06 - verdict response: everyday product, real Firecrawl data, judge-facing log
+Acted on an external review without touching the engine: first-visit hero on `/` (what it is, relatable school/clinic/relief examples, trust line, one-click sample scenario reusing the safe demo reset); public recall watch that searches real CPSC/FDA/NSF sources for exact product identifiers and freezes offers transactionally on a confirmed match (no writes on clear); Firecrawl supplier discovery that prefills the supplier form while still requiring a human-supplied email; proof panels moved behind "How was this decision made?"; plain-language statuses and allocator reasons; relative deadline display; dead shortfall button removed. Verified live in-browser: 5 real supplier candidates with working prefill, and a real recall search returning clear. The same session also exposed and fixed a real defect: a provider send failure (e.g. AgentMail 429) stranded RFQ/clarification/hold threads in "sending" because only rate-limit failures released the claim — all three send paths now release the matching claim and record a failed ledger run (covered by 2 new regression tests). Explicitly out of scope per owner: direct-OpenAI lane (no key), prod deploy, public repo, video recording, social post, submission — all need owner accounts/consent.
+
+Known provider-side block (not a code defect): after one AgentMail HTTP 429, reply delivery and webhook ingest degraded — replies accepted by the API never reached the inbox and the signed webhook stopped firing, while the deployment endpoint stayed healthy and the secret configured. The full AgentMail→Groq round-trip suite passes when the provider is healthy; it was not re-run to green during the degraded window to avoid hammering a rate-limited API.
+
+Update: the provider recovered later the same day and the round-trip suite re-ran fully green, including the new reminder step — RFQ sent, reminder sent in-thread, reply ingested via signed webhook, Groq extraction persisted, provider proof shown.
+
+### 2026-09-06 - buyer-facing reposition, basket slice, reminders, export
+Repositioned around quote comparison instead of emergency process: generalized tagline and thesis (relief as flagship, everyday buyers as fit), "Sample scenario" naming with "Reload sample", replay scrubber demoted to a history list, proof panels behind "How was this decision made?", a next-step banner answering "what do I do now?", and empty panels hidden until data exists. Basket slice: multi-line-item request creation, one-click send-all RFQs, and a per-incident coverage summary (combined cross-need allocation and PDF extraction logged as follow-ups). Supplier reminders: human-approved nudges for unanswered threads with awaiting-reply counts. Export: one-page printable decision report (quotes, rationale, citations, approval, history). Also hardened the suite itself: reset completion is now awaited explicitly and cold-mutation toast timeouts raised after trace forensics showed strict sequencing, not product, failures.
+
+### 2026-09-07 - distinctive visual identity ("signed dossier")
+Applied a design pass with a deliberate point of view instead of the generic light SaaS look: paper sheets with hairline rules and zero shadows, ledger-green primary with a seal-red reserved for danger, Georgia serif for the wordmark/decision figures/signed report, stamp-style status seals, sentence-case labels, comma-joined meta, no monospace and no pill badges anywhere. The approval seal transition is the single orchestrated motion (reduced-motion respected). Screenshot critique caught and fixed: an over-heavy Live stamp, saturated disabled buttons (now globally desaturated), a redundant hero kicker and event-log badge (both removed), and a raw auth token leaking into the decision-history view (now masked as Workspace coordinator). Notes for future passes: the bulletin page keeps its brutalist mock-external voice on purpose; provider tiles still use adjacent spans for the health pill.
+
+### 2026-09-07 - architecture deepening certified on development
+Implemented all six review candidates: one transactional recompute behind a deduped interface (deleting two drift copies, fixing drift plans rejected as stale at approval when offers carry field evidence); one certStatus transition rule shared by all evidence writers; one evidence matcher for verify and recall watch; one send guard behind four AgentMail sends (inbox creation and award batching documented as intentional exceptions); supplier checks routed through the owner chain; one outreach coordinator module behind the UI. Verification on dev (`judicious-rat-761`): build, lint, 63 unit tests, 2 smoke + 4 functional + 2 live Firecrawl + 1 AgentMail/Groq round trip (including a live reminder send through the new guard) all green. Production untouched; changes uncommitted.

@@ -2,11 +2,11 @@
 
 ## Product thesis
 
-ReliefGrid is the evidence-control layer for urgent procurement. It turns supplier email into comparable offers, proposes a deterministic human-approved sourcing plan, and freezes or reopens that plan when the evidence behind it changes.
+ReliefGrid turns supplier quote emails into a sourcing decision a team can defend. It converts email into comparable offers, proposes a deterministic human-approved sourcing plan, and freezes or reopens that plan when the evidence behind it changes. Flagship scenario: relief response; everyday fit: any small organization making an urgent purchase.
 
 ## Target user and job
 
-- User: emergency procurement lead at an NGO, municipal shelter, or regional relief organization.
+- User: anyone who buys things for a small organization — office and facility managers, school administrators, clinic managers, event planners — with relief coordinators as the flagship example.
 - Job: within 20 minutes, produce a defensible sourcing decision and show why every selected offer is safe, timely, affordable, and approved.
 - Boundary: decision support and supplier correspondence, not payments, routing, autonomous purchasing, or an ERP replacement.
 
@@ -24,6 +24,15 @@ ReliefGrid is the evidence-control layer for urgent procurement. It turns suppli
 - [x] Real Firecrawl recheck of a public Convex bulletin drives evidence-drift invalidation.
 - [x] Versioned offers, causal audit timeline, counterfactual analysis, and live subscriptions across workspace tabs.
 - [x] Lint, typecheck, unit/integration tests, production build, and committed Playwright smoke tests.
+- [x] First-visit hero on `/`: what the product is, who it is for, one-click sample scenario, trust line.
+- [x] Public recall watch: Firecrawl searches CPSC/FDA/NSF for exact product identifiers; a confirmed match freezes offers transactionally, otherwise no writes.
+- [x] Supplier discovery: Firecrawl web search prefills the supplier form; adding still requires a human-supplied email.
+- [x] Everyday-product copy: proof panels behind "How was this decision made?", plain-language statuses, relative deadlines, dead shortfall button removed.
+- [x] Provider send failures release their send claim and record a failed ledger run instead of stranding threads in "sending".
+- [x] Buyer-facing reposition: generalized tagline, sample-scenario naming, decision history list, "How was this decision made?" disclosure, next-step banner, empty panels hidden until data exists.
+- [x] Basket slice: multi-line-item request creation, one-click send-all RFQs, per-incident coverage summary.
+- [x] Supplier reminders: human-approved nudges for unanswered RFQ threads with awaiting-reply counts.
+- [x] Exportable decision report: quotes, winner rationale, evidence citations, approval, and history on one printable page.
 
 Development certification: 35 unit/integration tests, two smoke journeys, three comprehensive functional browser journeys, two live Firecrawl/workflow journeys, and one live AgentMail/Groq round trip, plus production build, lint, typecheck, and full npm audit. The live browser proof observes coverage change `100 -> 30 -> 100` through both direct and durable human-approved recovery paths. The provider proof sends an approved RFQ between controlled AgentMail inboxes, ingests the signed in-thread reply, and persists Groq's extracted 25-unit offer at `$4.50` through the deployed development backend.
 
@@ -64,3 +73,5 @@ The demo fails acceptance if any provider result is represented as live when it 
 - Add supplier acknowledgment, shipment, receiving, and partial-delivery reconciliation.
 - Add retention controls for raw email and evidence files.
 - Add an expiring, access-controlled decision-packet share link if customers validate the need.
+- Combine per-need plans into one cross-need allocation with partial-basket supplier quotes.
+- Extract quote text from PDF attachments into the same evidence-span extraction path.

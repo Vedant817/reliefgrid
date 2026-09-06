@@ -1,10 +1,10 @@
 # ReliefGrid
 
-ReliefGrid watches the evidence behind urgent procurement decisions. It converts supplier email into comparable offers, proposes a deterministic human-approved plan, and freezes the plan when certification or recall evidence changes.
+ReliefGrid turns supplier quote emails into a sourcing decision a team can defend — for any group that buys things, with relief response as the flagship scenario. It converts email into comparable offers, proposes a deterministic human-approved plan, and freezes the plan when certification or recall evidence changes.
 
 ## Why it exists
 
-Emergency procurement teams often coordinate time-critical purchases through scattered email threads. Comparing quantities, prices, deadlines, conditions, and certifications manually is slow; proving later why a supplier was selected is harder. ReliefGrid makes that decision chain explicit without allowing an LLM to spend money or decide eligibility by itself.
+Teams making urgent purchases — a school ordering chairs by Friday, a clinic restocking supplies, a relief crew buying filters — often coordinate through scattered email threads. Comparing quantities, prices, deadlines, conditions, and certifications manually is slow; proving later why a supplier was selected is harder. ReliefGrid makes that decision chain explicit without allowing an LLM to spend money or decide eligibility by itself.
 
 ## Core flow
 
