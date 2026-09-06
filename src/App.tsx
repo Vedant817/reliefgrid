@@ -19,8 +19,7 @@ import { PublicRecallCheck } from "./components/PublicRecallCheck";
 import { BasketSummary } from "./components/BasketSummary";
 import { DecisionReport } from "./pages/DecisionReport";
 import { formatDate, formatDeadline } from "./lib/format";
-import { countVerifiedOffers, nextStepForWorkspace } from "./lib/outreach";
-
+import { nextStepForWorkspace } from "./lib/outreach";
 export default function App() {
   const demoMode = new URLSearchParams(window.location.search).get("demo") === "1";
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
@@ -52,30 +51,18 @@ export default function App() {
   const [selectedNeedId, setSelectedNeedId] = useState<string | null>(null);
   const activeNeed = (needs.find((n: any) => n._id === selectedNeedId) ?? needs[0] ?? null) as any;
 
-  const offers = useQuery(
-    api.offers.listOffersByNeed,
-    activeNeed ? { needId: activeNeed._id } : "skip",
-  ) ?? [];
-
   const suppliers = useQuery(api.suppliers.listSuppliers, isAuthenticated ? {} : "skip") ?? [];
 
-  const plans = useQuery(
-    api.allocations.listAllocationPlans,
+  // One joined backend read per active need replaces the fan-out of
+  // offers/plans/threads/checks/coverage subscriptions.
+  const workspace: any = useQuery(
+    api.workspace.getNeedWorkspace,
     activeNeed ? { needId: activeNeed._id } : "skip",
-  ) ?? [];
-
-  const latestPlan = plans[0] ?? null;
-
-  const threads = useQuery(
-    api.rfq.listThreadsByNeed,
-    activeNeed ? { needId: activeNeed._id } : "skip",
-  ) ?? [];
-  const sourceChecks = useQuery(
-    api.sourceChecks.listSourceChecksByNeed,
-    activeNeed ? { needId: activeNeed._id } : "skip",
-  ) ?? [];
-
-  const verifiedOfferCount = countVerifiedOffers(offers, sourceChecks);
+  );
+  const offers = workspace?.offers ?? [];
+  const threads = workspace?.threads ?? [];
+  const latestPlan = workspace?.latestPlan ?? null;
+  const verifiedOfferCount = workspace?.verifiedOfferCount ?? 0;
 
   // The coordinator's only question is "what do I do now?" — answered from
   // live state by the outreach coordinator module.
@@ -337,7 +324,7 @@ export default function App() {
         {/* Center: Offer Matrix */}
         <div className="lg:col-span-5">
           {activeNeed ? (
-            <OfferMatrix offers={offers} activeNeed={activeNeed} />
+            <OfferMatrix offers={offers} coverage={workspace?.coverage ?? null} />
           ) : (
             <div className="card p-6">
               <div className="text-sm font-semibold">No request selected</div>

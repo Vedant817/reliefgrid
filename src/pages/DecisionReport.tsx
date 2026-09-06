@@ -8,10 +8,11 @@ import { formatCents, formatDate, humanizeStatus, displayApprover } from "../lib
 // or an auditor.
 export function DecisionReport() {
   const needId = new URLSearchParams(window.location.search).get("needId");
-  const need: any = useQuery(api.needs.getNeed, needId ? { needId: needId as any } : "skip");
-  const offers: any = useQuery(api.offers.listOffersByNeed, needId ? { needId: needId as any } : "skip") ?? [];
-  const plan: any = useQuery(api.allocations.getLatestPlan, needId ? { needId: needId as any } : "skip");
-  const checks: any = useQuery(api.sourceChecks.listSourceChecksByNeed, needId ? { needId: needId as any } : "skip") ?? [];
+  const workspace: any = useQuery(api.workspace.getNeedWorkspace, needId ? { needId: needId as any } : "skip");
+  const need: any = workspace?.need;
+  const offers: any[] = workspace?.offers ?? [];
+  const plan: any = workspace?.latestPlan;
+  const checks: any[] = offers.flatMap((o: any) => o.sourceChecks ?? []);
   const whatif: any = useQuery(
     api.counterfactual.compareConstraints,
     needId ? { needId: needId as any, deadlineExtensionHours: 0 } : "skip",
@@ -25,7 +26,9 @@ export function DecisionReport() {
     return <main className="mx-auto max-w-3xl bg-paper p-8 text-sm text-soft">Loading decision report…</main>;
   }
 
-  const sorted = [...offers].sort((a, b) => a.unitPriceCents - b.unitPriceCents);
+  // Workspace order is canonical: the printable record ranks winners
+  // exactly as the live matrix does.
+  const sorted = offers;
   const winners = new Set((plan.lines ?? []).map((l: any) => String(l.offerId)));
   const approverLabel = displayApprover(plan.approval?.approvedBy);
 
@@ -105,6 +108,12 @@ export function DecisionReport() {
                 <div className="text-xs font-semibold">{c.type}: {humanizeStatus(c.status)}, {c.sourceAuthority ?? "supporting"}</div>
                 <div className="mt-1 font-serif text-[15px] italic leading-relaxed">“{c.quote}”</div>
                 <a href={c.url} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-ledger underline underline-offset-2">{c.url}</a>
+              </li>
+            ))}
+            {offers.flatMap((o: any) => (o.attachments ?? []).map((a: any) => ({ ...a, supplierName: o.supplier?.name ?? "Unknown supplier" }))).map((a: any) => (
+              <li key={a._id} className="rounded-lg bg-sheet p-3 ring-1 ring-hairline">
+                <div className="text-xs font-semibold">Supplier file, {a.supplierName}</div>
+                <a href={a.url ?? undefined} target="_blank" rel="noreferrer" className="mt-1 inline-block text-xs text-ledger underline underline-offset-2">{a.name}</a>
               </li>
             ))}
             {!checks.length && <li className="text-sm text-soft">No independent source checks recorded.</li>}

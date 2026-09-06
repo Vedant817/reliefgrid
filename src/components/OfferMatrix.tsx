@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { formatCents, formatDate, humanizeStatus } from "../lib/format";
-import { offerFlags, sortOffersForMatrix } from "../lib/outreach";
 
 function EvidenceAttach({ offerId }: { offerId: any }) {
   const attachments: any = useQuery(api.attachments.listAttachmentsByOffer, { offerId }) ?? [];
@@ -72,11 +71,7 @@ function Badge({ children, tone }: any) {
   return <span className={`rounded-[4px] border px-2 py-0.5 text-[11px] font-semibold ${map[tone] ?? map.neutral}`}>{children}</span>;
 }
 
-export function OfferMatrix({ offers, activeNeed }: any) {
-  const coverage: any = useQuery(
-    api.offerTotals.getNeedCoverage,
-    activeNeed ? { needId: activeNeed._id } : "skip",
-  );
+export function OfferMatrix({ offers, coverage }: any) {
   const draftClarification = useAction(api.actions.clarify.draftClarification);
   const sendClarification = useAction(api.actions.clarify.approveAndSendClarification);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -85,11 +80,6 @@ export function OfferMatrix({ offers, activeNeed }: any) {
   const [pendingOffer, setPendingOffer] = useState<string | null>(null);
   const [clarificationError, setClarificationError] = useState<Record<string, string>>({});
 
-  if (!activeNeed) {
-    return (
-      <div className="card p-6 text-sm text-soft">Select a need to view offers.</div>
-    );
-  }
   if (!offers.length) {
     return (
       <div className="card p-6">
@@ -99,8 +89,9 @@ export function OfferMatrix({ offers, activeNeed }: any) {
     );
   }
 
-  // Sort: verified first, then price
-  const sorted = sortOffersForMatrix(offers);
+  // Order and eligibility flags arrive precomputed from the workspace read
+  // model, so every view ranks offers identically.
+  const sorted = offers;
 
   return (
     <div className="card overflow-hidden">
@@ -113,7 +104,7 @@ export function OfferMatrix({ offers, activeNeed }: any) {
 
       <div className="divide-y divide-hairline">
         {sorted.map((o: any) => {
-          const { isLate, isVerified, ambiguous } = offerFlags(o, activeNeed);
+          const { isLate, isVerified, ambiguous } = o;
           return (
             <div key={o._id} className="p-4 hover:bg-paper">
               <div className="flex items-start justify-between gap-3">

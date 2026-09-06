@@ -1,7 +1,7 @@
-// Outreach coordinator: every derivation and send sequence behind supplier
-// outreach in one module. UI components render its verdicts and own only
-// button/busy/message state — the inbox → threads → send order, the reply
-// states, and the workflow stage live here and are unit-tested here.
+// Outreach coordinator: send sequencing, reply states, and workspace
+// derivations shared by App, DemoRail, and SupplierOutreach. Offer order
+// and eligibility flags live server-side in the workspace read model;
+// everything here is the client-owned remainder.
 
 export type OutreachDeps = {
   ensureInbox: (needId: string) => Promise<unknown>;
@@ -97,22 +97,6 @@ export function demoProgress(args: {
     { label: "Human approval", complete: args.planStatus === "approved", evidence: args.planStatus ?? "no plan" },
   ];
   return { steps, nextIndex: steps.findIndex((step) => !step.complete) };
-}
-
-export function sortOffersForMatrix<T extends { certStatus: string; unitPriceCents: number }>(offers: T[]) {
-  return [...offers].sort((a, b) => {
-    const av = a.certStatus === "verified" ? 0 : 1;
-    const bv = b.certStatus === "verified" ? 0 : 1;
-    return av - bv || a.unitPriceCents - b.unitPriceCents;
-  });
-}
-
-export function offerFlags(offer: { arrivalAt: number; certStatus: string; confidence: number }, need: { deadlineAt: number } | null) {
-  return {
-    isLate: Boolean(need && offer.arrivalAt > need.deadlineAt),
-    isVerified: offer.certStatus === "verified",
-    ambiguous: offer.certStatus === "needs_review" || offer.confidence < 0.75,
-  };
 }
 
 export function awaitingReplyThreads<T extends { status: string; agentmailMessageId?: string }>(threads: T[]) {

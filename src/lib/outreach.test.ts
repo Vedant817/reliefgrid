@@ -4,9 +4,7 @@ import {
   countVerifiedOffers,
   demoProgress,
   nextStepForWorkspace,
-  offerFlags,
   sendOutreachForNeed,
-  sortOffersForMatrix,
 } from "./outreach";
 
 function deps(overrides: Record<string, unknown> = {}) {
@@ -78,19 +76,6 @@ describe("workspace derivations", () => {
     expect(steps.map((s) => s.label)).toEqual(["Create need", "Send RFQs", "Receive replies", "Verify evidence", "Human approval"]);
     expect(nextIndex).toBe(2);
     expect(demoProgress({ hasNeed: true, threadCount: 1, offerCount: 1, verifiedOfferCount: 1, planStatus: "approved" }).nextIndex).toBe(-1);
-  });
-
-  test("matrix sorting and flags match the old inline logic", () => {
-    const offers = [
-      { certStatus: "needs_review", unitPriceCents: 500, arrivalAt: 5, confidence: 0.5 },
-      { certStatus: "verified", unitPriceCents: 900, arrivalAt: 5, confidence: 0.9 },
-      { certStatus: "verified", unitPriceCents: 100, arrivalAt: 5, confidence: 0.9 },
-    ];
-    expect(sortOffersForMatrix(offers).map((o) => o.unitPriceCents)).toEqual([100, 900, 500]);
-    const need = { deadlineAt: 10 };
-    expect(offerFlags({ arrivalAt: 11, certStatus: "verified", confidence: 0.9 }, need)).toEqual({ isLate: true, isVerified: true, ambiguous: false });
-    expect(offerFlags({ arrivalAt: 5, certStatus: "needs_review", confidence: 0.9 }, need)).toMatchObject({ isLate: false, ambiguous: true });
-    expect(offerFlags({ arrivalAt: 5, certStatus: "verified", confidence: 0.9 }, null)).toMatchObject({ isLate: false });
   });
 
   test("awaiting replies means sent with a provider thread", () => {
