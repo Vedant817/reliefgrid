@@ -1,7 +1,7 @@
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/**", "convex/_generated/**", ".agents/**", ".claude/**", "e2e/**"] },
+  { ignores: ["dist/**", "convex/_generated/**", ".agents/**", ".claude/**", "e2e/**", ".delta/**"] },
   ...tseslint.configs.recommended,
   {
     rules: {

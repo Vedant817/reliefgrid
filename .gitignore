@@ -16,6 +16,9 @@ test-results/
 # Convex
 convex/_generated/
 
+# External tool snapshots
+.delta/
+
 # Environment
 .env
 .env.local
