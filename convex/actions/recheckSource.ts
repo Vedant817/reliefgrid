@@ -4,15 +4,12 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { scrapeViaComponent } from "../lib/firecrawl";
+import { sha256Hex } from "../lib/evidence";
+import { recordRun } from "../lib/runs";
 import { checkLimit } from "../rateLimits";
 import type { Id } from "../_generated/dataModel";
 
 declare const process: { env: Record<string, string | undefined> };
-
-async function sha256(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
 
 export const activateRecallAndRecheck = action({
   args: { needId: v.id("needs") },
@@ -35,9 +32,9 @@ export const activateRecallAndRecheck = action({
         needId: args.needId,
         sourceUrl,
         quote,
-        contentHash: await sha256(quote),
+        contentHash: await sha256Hex(quote),
       });
-      await ctx.runMutation(internal.health.recordProviderRun, {
+      await recordRun(ctx, {
         provider: "firecrawl",
         operation: "recheck_controlled_bulletin",
         status: "live",

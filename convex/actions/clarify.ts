@@ -5,6 +5,8 @@ import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { chatJson, resolveLlmProvider } from "../lib/llm";
+import { MIN_EVIDENCE_CONFIDENCE } from "../lib/allocate";
+import { recordRun } from "../lib/runs";
 import { replyAgentMailMessage, resolveAgentMail } from "../lib/agentmail";
 import { guardedProviderSend, IDEMPOTENCY_WINDOW_MS } from "../lib/sendGuard";
 import { checkLimit } from "../rateLimits";
@@ -28,9 +30,9 @@ function unresolvedFields(offer: OfferForClarification) {
   if (offer.arrivalAt <= Date.now()) unresolved.add("arrival date and time");
   if (offer.certStatus !== "verified") unresolved.add("certification status");
   for (const [field, evidence] of Object.entries(offer.fieldEvidence ?? {})) {
-    if (evidence.confidence < 0.75) unresolved.add(field === "price" ? "unit price" : field === "arrival" ? "arrival date and time" : field === "cert" ? "certification status" : "quantity");
+    if (evidence.confidence < MIN_EVIDENCE_CONFIDENCE) unresolved.add(field === "price" ? "unit price" : field === "arrival" ? "arrival date and time" : field === "cert" ? "certification status" : "quantity");
   }
-  if (offer.confidence < 0.75 && unresolved.size === 0) unresolved.add("offer terms");
+  if (offer.confidence < MIN_EVIDENCE_CONFIDENCE && unresolved.size === 0) unresolved.add("offer terms");
   return [...unresolved];
 }
 
@@ -69,11 +71,11 @@ export const draftClarification = action({
         false,
       );
     } catch (e) {
-      await ctx.runMutation(internal.health.recordProviderRun, {
+      await recordRun(ctx, {
         provider: llm.kind,
         operation: "draft_targeted_clarification",
         status: "failed",
-        latencyMs: Date.now() - startedAt,
+        startedAt,
         requestId: String(args.offerId),
         meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown" }),
         ownerId: offer.ownerId,
@@ -82,10 +84,11 @@ export const draftClarification = action({
     }
     const question = reply.content.trim();
     if (!question) throw new Error("empty clarification from model");
-    await ctx.runMutation(internal.health.recordProviderRun, {
+    await recordRun(ctx, {
       provider: llm.kind,
       operation: "draft_targeted_clarification",
       status: "live",
+      startedAt,
       latencyMs: reply.latencyMs,
       requestId: reply.requestId,
       meta: JSON.stringify({ unresolved }),

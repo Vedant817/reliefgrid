@@ -12,6 +12,7 @@ import {
   sha256Hex,
 } from "../lib/evidence";
 import { checkLimit } from "../rateLimits";
+import { recordRun } from "../lib/runs";
 import type { Id } from "../_generated/dataModel";
 
 // Real-world evidence drift: Firecrawl searches public recall sources for
@@ -52,11 +53,11 @@ export const checkPublicRecalls = action({
     try {
       hits = (await searchViaComponent(ctx, searchQuery, 5)).hits;
     } catch (error) {
-      await ctx.runMutation(internal.health.recordProviderRun, {
+      await recordRun(ctx, {
         provider: "firecrawl",
         operation: "search_public_recalls",
         status: "failed",
-        latencyMs: Date.now() - startedAt,
+        startedAt,
         requestId: searchQuery,
         meta: JSON.stringify({ error: error instanceof Error ? error.message : "unknown" }),
         ownerId,
@@ -100,11 +101,11 @@ export const checkPublicRecalls = action({
         quote,
         contentHash: await sha256Hex(quote),
       });
-      await ctx.runMutation(internal.health.recordProviderRun, {
+      await recordRun(ctx, {
         provider: "firecrawl",
         operation: "search_public_recalls",
         status: "live",
-        latencyMs: Date.now() - startedAt,
+        startedAt,
         requestId: candidate.url,
         meta: JSON.stringify({ invalidated: result.invalidated }),
         ownerId,
@@ -121,11 +122,11 @@ export const checkPublicRecalls = action({
       };
     }
 
-    await ctx.runMutation(internal.health.recordProviderRun, {
+    await recordRun(ctx, {
       provider: "firecrawl",
       operation: "search_public_recalls",
       status: "live",
-      latencyMs: Date.now() - startedAt,
+      startedAt,
       requestId: searchQuery,
       meta: JSON.stringify({ checked: candidates.length, result: "clear" }),
       ownerId,

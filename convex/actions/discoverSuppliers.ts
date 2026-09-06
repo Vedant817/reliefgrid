@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { resolveFirecrawl, searchViaComponent } from "../lib/firecrawl";
+import { recordRun } from "../lib/runs";
 import { checkLimit } from "../rateLimits";
 
 // Supplier discovery: Firecrawl searches the public web for suppliers of the
@@ -30,11 +31,11 @@ export const discoverSuppliers = action({
     try {
       hits = (await searchViaComponent(ctx, searchQuery, 5)).hits;
     } catch (error) {
-      await ctx.runMutation(internal.health.recordProviderRun, {
+      await recordRun(ctx, {
         provider: "firecrawl",
         operation: "discover_suppliers",
         status: "failed",
-        latencyMs: Date.now() - startedAt,
+        startedAt,
         requestId: searchQuery,
         meta: JSON.stringify({ error: error instanceof Error ? error.message : "unknown" }),
         ownerId,
@@ -54,11 +55,11 @@ export const discoverSuppliers = action({
       })
       .slice(0, 5)
       .map((hit) => ({ name: hit.title, url: hit.url, snippet: hit.snippet }));
-    await ctx.runMutation(internal.health.recordProviderRun, {
+    await recordRun(ctx, {
       provider: "firecrawl",
       operation: "discover_suppliers",
       status: "live",
-      latencyMs: Date.now() - startedAt,
+      startedAt,
       requestId: searchQuery,
       meta: JSON.stringify({ results: suppliers.length }),
       ownerId,

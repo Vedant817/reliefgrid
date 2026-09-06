@@ -4,6 +4,8 @@ import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { normalizeMailbox, replyAgentMailMessage, resolveAgentMail, sendAgentMailMessage } from "../lib/agentmail";
+import { guardedProviderSend, IDEMPOTENCY_WINDOW_MS } from "../lib/sendGuard";
+import { recordRun } from "../lib/runs";
 
 export const sendAwardNotices = internalAction({
   args: { planId: v.id("allocationPlans") },
@@ -33,8 +35,15 @@ export const sendAwardNotices = internalAction({
         demo,
       });
       const dispatchKey = `award-${String(args.planId)}-${String(row.thread._id)}-${kind}`;
-      if (claim.shouldReconcile && claim.sendClaimedAt && Date.now() - claim.sendClaimedAt >= 23 * 60 * 60 * 1000) {
-        console.error("Award notice requires manual review after provider idempotency window expired", claim.noticeId);
+      if (claim.shouldReconcile && claim.sendClaimedAt && Date.now() - claim.sendClaimedAt >= IDEMPOTENCY_WINDOW_MS) {
+        await recordRun(ctx, {
+          provider: "agentmail",
+          operation: kind === "award" ? "send_award" : "send_decline",
+          status: "failed",
+          requestId: String(claim.noticeId),
+          meta: JSON.stringify({ error: "Award notice requires manual review after provider idempotency window expired" }),
+          ownerId: dispatch.ownerId ?? undefined,
+        });
         failed++;
         continue;
       }
@@ -46,14 +55,26 @@ export const sendAwardNotices = internalAction({
       const text = kind === "award"
         ? `Your offer has been selected for ${row.allocatedQty} units of ${dispatch.need.item}. Please reply to acknowledge availability and dispatch timing.`
         : `Thank you for quoting ${dispatch.need.item}. Another offer was selected for this requirement.`;
+      // Each row goes through the shared send guard: stale rejection,
+      // provider send with claim release plus failed run on failure, finish
+      // step, live run. Awards intentionally skip rate limiting so an
+      // approved plan's notices are never throttled mid-dispatch.
       try {
-        const result = row.thread.agentmailMessageId && dispatch.inbox?.inboxId
-          ? await replyAgentMailMessage(mail, dispatch.inbox.inboxId, row.thread.agentmailMessageId, text, 20000, dispatchKey)
-          : await sendAgentMailMessage(mail, row.supplier.contactEmail, `${kind === "award" ? "Award" : "RFQ update"}: ${dispatch.need.item}`, text, 20000, dispatch.inbox?.inboxId, dispatchKey);
-        await ctx.runMutation(internal.awardNotices.finishNotice, { noticeId: claim.noticeId, status: "sent", messageId: result.messageId });
+        await guardedProviderSend(ctx, {
+          ownerId: dispatch.ownerId ?? undefined,
+          rateLimit: null,
+          operation: kind === "award" ? "send_award" : "send_decline",
+          failureRequestId: String(claim.noticeId),
+          liveRun: (s) => ({ requestId: s.threadId }),
+          claim: { reconcile: claim.shouldReconcile, claimedAt: claim.sendClaimedAt },
+          releaseClaim: () => ctx.runMutation(internal.awardNotices.finishNotice, { noticeId: claim.noticeId, status: "failed" }),
+          send: () => row.thread.agentmailMessageId && dispatch.inbox?.inboxId
+            ? replyAgentMailMessage(mail, dispatch.inbox.inboxId, row.thread.agentmailMessageId, text, 20000, dispatchKey)
+            : sendAgentMailMessage(mail, row.supplier.contactEmail, `${kind === "award" ? "Award" : "RFQ update"}: ${dispatch.need.item}`, text, 20000, dispatch.inbox?.inboxId, dispatchKey),
+          finish: (_c, s) => ctx.runMutation(internal.awardNotices.finishNotice, { noticeId: claim.noticeId, status: "sent", messageId: s.messageId }),
+        });
         sent++;
-      } catch (error) {
-        console.error(error);
+      } catch {
         failed++;
       }
     }

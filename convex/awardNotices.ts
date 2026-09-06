@@ -17,6 +17,7 @@ export const getDispatch = internalQuery({
     const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", plan.needId)).first();
     return {
       need,
+      ownerId: incident.ownerId ?? null,
       isDemo: incident.isDemo === true,
       inbox,
       threads: await Promise.all(threads.map(async (thread) => ({

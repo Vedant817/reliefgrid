@@ -10,6 +10,8 @@ import {
   resolveLlmProvider,
   type ExtractedOffer,
 } from "../lib/llm";
+import { MIN_EVIDENCE_CONFIDENCE } from "../lib/allocate";
+import { recordRun } from "../lib/runs";
 import { checkLimit } from "../rateLimits";
 
 function evidenceSpan(match: RegExpMatchArray | null, confidence: number) {
@@ -51,11 +53,11 @@ export const extractOfferFromEmail = internalAction({
       parsed = result;
       requestId = reply.requestId;
     } catch (e) {
-      await ctx.runMutation(internal.health.recordProviderRun, {
+      await recordRun(ctx, {
         provider: llm.kind,
         operation: "extract_offer",
         status: "failed",
-        latencyMs: Date.now() - startedAt,
+        startedAt,
         requestId: args.rawEmailId,
         meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown" }),
         ownerId: context.ownerId,
@@ -87,7 +89,7 @@ export const extractOfferFromEmail = internalAction({
     };
     const minimumFieldConfidence = Math.min(...Object.values(fieldEvidence).map((field) => field.confidence));
     confidence = Math.min(confidence, minimumFieldConfidence);
-    if (minimumFieldConfidence < 0.75) certStatus = "needs_review";
+    if (minimumFieldConfidence < MIN_EVIDENCE_CONFIDENCE) certStatus = "needs_review";
 
     await ctx.runMutation(internal.offers.upsertOfferVersion, {
       needId: args.needId,
@@ -111,11 +113,11 @@ export const extractOfferFromEmail = internalAction({
       console.error(e);
     }
 
-    await ctx.runMutation(internal.health.recordProviderRun, {
+    await recordRun(ctx, {
       provider: llm.kind,
       operation: "extract_offer",
       status: "live",
-      latencyMs: Date.now() - startedAt,
+      startedAt,
       requestId,
       meta: JSON.stringify({ language, confidence }),
       ownerId: context.ownerId,

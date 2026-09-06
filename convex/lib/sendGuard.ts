@@ -12,14 +12,13 @@ export type SendClaim = {
 // stale-claim rejection, rate limit (releasing the claim on failure),
 // provider send (releasing the claim and recording a failed run on
 // failure), finish step, live run. Callers keep their claim acquisition,
-// dedupe policy, payload, and return shaping; awards stay out because its
-// batching plus per-row reconcile and recovery scheduling is a different
-// interface, and inbox creation stays out because its shared-vs-create
+// dedupe policy, payload, and return shaping. Awards batching goes through
+// it per row; inbox creation stays out because its shared-vs-create
 // branches rate-limit differently.
 export async function guardedProviderSend<Sent extends { threadId: string; latencyMs: number }>(
   ctx: any,
   opts: {
-    ownerId: string;
+    ownerId?: string;
     rateLimit: { name: Parameters<typeof checkLimit>[1]; key: string } | null;
     operation: string;
     failureRequestId: string;
@@ -33,10 +32,11 @@ export async function guardedProviderSend<Sent extends { threadId: string; laten
   },
 ): Promise<{ claim: SendClaim | null; sent: Sent }> {
   const { claim } = opts;
+  // A missing timestamp means fresh, matching the original per-send checks.
   if (
     claim?.reconcile &&
     opts.staleAfterMs !== undefined &&
-    Date.now() - (claim.claimedAt ?? 0) >= opts.staleAfterMs
+    Date.now() - (claim.claimedAt ?? Date.now()) >= opts.staleAfterMs
   ) {
     throw new Error(opts.staleMessage ?? "Send is older than the provider idempotency window and requires manual review");
   }

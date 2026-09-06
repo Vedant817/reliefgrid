@@ -20,6 +20,10 @@ export type AllocationResult = {
   trace: string;
 };
 
+// The single confidence floor behind allocator abstention, extraction
+// quarantines, and clarification prompts. One definition, three readers.
+export const MIN_EVIDENCE_CONFIDENCE = 0.75;
+
 export function allocateOffers(
   offers: AllocInput[],
   need: { qty: number; budgetCents: number; deadlineAt: number; certRequired?: string; partialAllowed: boolean },
@@ -29,7 +33,7 @@ export function allocateOffers(
 
   for (const o of offers) {
     const uncertainFields = o.fieldEvidence
-      ? Object.entries(o.fieldEvidence).filter(([, evidence]) => evidence.confidence < 0.75).map(([field]) => field)
+      ? Object.entries(o.fieldEvidence).filter(([, evidence]) => evidence.confidence < MIN_EVIDENCE_CONFIDENCE).map(([field]) => field)
       : [];
     if (uncertainFields.length > 0) {
       rejected.push({ ...o, reason: `Needs review: low-confidence ${uncertainFields.join(", ")}` });
@@ -47,7 +51,7 @@ export function allocateOffers(
       rejected.push({ ...o, reason: `Cert unverified: requires ${need.certRequired}, got ${o.certStatus}` });
       continue;
     }
-    if (o.confidence < 0.75) {
+    if (o.confidence < MIN_EVIDENCE_CONFIDENCE) {
       rejected.push({ ...o, reason: `Low confidence ${o.confidence.toFixed(2)} — needs review` });
       continue;
     }

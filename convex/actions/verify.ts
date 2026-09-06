@@ -12,6 +12,7 @@ import {
   sha256Hex,
 } from "../lib/evidence";
 import { checkLimit } from "../rateLimits";
+import { recordRun } from "../lib/runs";
 
 // Live-only Firecrawl verification. There is no mock lane: missing keys or
 // provider errors throw after recording a failed run, so verification state
@@ -49,11 +50,11 @@ export const verifyOffer = action({
     try {
       scraped = await scrapeViaComponent(ctx, args.url);
     } catch (e) {
-      await ctx.runMutation(internal.health.recordProviderRun, {
+      await recordRun(ctx, {
         provider: "firecrawl",
         operation: `verify_${args.type}`,
         status: "failed",
-        latencyMs: Date.now() - startedAt,
+        startedAt,
         requestId: String(args.offerId),
         meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown", url: args.url }),
         ownerId: offer.ownerId,
@@ -94,10 +95,11 @@ export const verifyOffer = action({
       matched: claimMatched,
     });
     await ctx.runMutation(internal.allocations.computeAllocationInternal, { needId: offer.needId });
-    await ctx.runMutation(internal.health.recordProviderRun, {
+    await recordRun(ctx, {
       provider: "firecrawl",
       operation: `verify_${args.type}`,
       status: "live",
+      startedAt,
       latencyMs: scraped.latencyMs,
       requestId: scraped.requestId,
       ownerId: offer.ownerId,

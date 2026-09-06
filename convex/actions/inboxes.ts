@@ -4,6 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import { createAgentMailInbox, getAgentMailInbox, resolveAgentMail } from "../lib/agentmail";
+import { recordRun } from "../lib/runs";
 import { checkLimit } from "../rateLimits";
 
 // Each need gets an inbox mapping. Constrained plans reuse one configured
@@ -54,7 +55,7 @@ export const ensureInboxForNeed = action({
       email: created.email,
     });
     void inboxRowId;
-    await ctx.runMutation(internal.health.recordProviderRun, {
+    await recordRun(ctx, {
       provider: "agentmail",
       operation,
       status: "live",
