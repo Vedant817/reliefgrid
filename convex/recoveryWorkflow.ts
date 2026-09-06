@@ -2,12 +2,10 @@ import { v } from "convex/values";
 import { WorkflowManager, getStatus, sendEvent } from "@convex-dev/workflow";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { components, internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
-import { allocateOffers } from "./lib/allocate";
 import { writeAudit } from "./lib/audit";
 import { requireNeedOwner } from "./model/auth";
 import { offersByNeed } from "./offerTotals";
-import { allocationInputHash } from "./lib/allocationHash";
+import { recomputeAllocation } from "./allocations";
 
 export const recoveryManager = new WorkflowManager(components.workflow);
 
@@ -27,51 +25,6 @@ export const driftRecovery = recoveryManager.define({
     return { recoveredQty: after.totalQty };
   },
 });
-
-async function recomputeForNeed(ctx: any, needId: Id<"needs">) {
-  const need = await ctx.db.get(needId);
-  if (!need) throw new Error("Need not found");
-  const offers = await ctx.db.query("offers").withIndex("by_need", (q: any) => q.eq("needId", needId)).take(200);
-  const inputs = await Promise.all(
-    offers.map(async (offer: any) => ({
-      offerId: String(offer._id),
-      supplierId: String(offer.supplierId),
-      supplierName: (await ctx.db.get(offer.supplierId))?.name ?? "Unknown supplier",
-      qty: offer.qty,
-      unitPriceCents: offer.unitPriceCents,
-      arrivalAt: offer.arrivalAt,
-      certStatus: offer.certStatus,
-      confidence: offer.confidence,
-      fieldEvidence: offer.fieldEvidence,
-    })),
-  );
-  const result = allocateOffers(inputs, need);
-  const plans = await ctx.db.query("allocationPlans").withIndex("by_need", (q: any) => q.eq("needId", needId)).take(100);
-  for (const plan of plans) {
-    if (plan.status === "proposed" || plan.status === "approved") await ctx.db.patch(plan._id, { status: "superseded" });
-  }
-  const planId = await ctx.db.insert("allocationPlans", {
-    needId,
-    status: "proposed",
-    totalCostCents: result.totalCostCents,
-    totalQty: result.totalQty,
-    createdAt: Date.now(),
-    decisionTrace: result.trace,
-    inputHash: allocationInputHash(need, inputs),
-  });
-  for (const selected of result.selected) {
-    await ctx.db.insert("allocationLines", {
-      planId,
-      supplierId: selected.supplierId as Id<"suppliers">,
-      offerId: selected.offerId as Id<"offers">,
-      qty: selected.qty,
-      costCents: selected.qty * selected.unitPriceCents,
-      reason: "selected by recovery workflow",
-    });
-  }
-  await ctx.db.patch(needId, { status: result.totalQty >= need.qty ? "planning" : "awaiting_responses" });
-  return { planId, totalQty: result.totalQty, totalCostCents: result.totalCostCents };
-}
 
 export const invalidateFailedOffers = internalMutation({
   args: { needId: v.id("needs") },
@@ -151,7 +104,15 @@ export const createReplacement = internalMutation({
 export const recomputeNeed = internalMutation({
   args: { needId: v.id("needs") },
   returns: v.object({ planId: v.id("allocationPlans"), totalQty: v.number(), totalCostCents: v.number() }),
-  handler: async (ctx, args) => recomputeForNeed(ctx, args.needId),
+  handler: async (ctx, args) => {
+    const result = await recomputeAllocation(ctx, args.needId, {
+      supersedeApproved: true,
+      allowEmpty: true,
+      lineReason: "selected by recovery workflow",
+    });
+    if (!result.planId) throw new Error("Recovery recompute produced no plan");
+    return { planId: result.planId, totalQty: result.totalQty, totalCostCents: result.totalCostCents };
+  },
 });
 
 export const startRecovery = mutation({

@@ -12,6 +12,8 @@ export const providerLimits = new RateLimiter(components.rateLimiter, {
   draftClarification: { kind: "fixed window", rate: 60, period: HOUR },
   sendClarification: { kind: "fixed window", rate: 30, period: HOUR },
   sendHoldNotice: { kind: "fixed window", rate: 30, period: HOUR },
+  sendReminder: { kind: "fixed window", rate: 30, period: HOUR },
+  discoverSuppliers: { kind: "fixed window", rate: 30, period: HOUR },
   providerUser: { kind: "fixed window", rate: 120, period: HOUR },
   providerGlobal: { kind: "fixed window", rate: 1000, period: HOUR },
 });
@@ -24,7 +26,9 @@ export async function checkLimit(
     | "sendRfq"
     | "draftClarification"
     | "sendClarification"
-    | "sendHoldNotice",
+    | "sendHoldNotice"
+    | "sendReminder"
+    | "discoverSuppliers",
   key: string,
   ownerId?: string,
 ) {

@@ -5,7 +5,7 @@ import { action } from "../_generated/server";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { replyAgentMailMessage, resolveAgentMail } from "../lib/agentmail";
-import { checkLimit } from "../rateLimits";
+import { guardedProviderSend, IDEMPOTENCY_WINDOW_MS } from "../lib/sendGuard";
 
 // Approval-gated live hold-notice send. There is no mock lane: without an
 // AgentMail key, or on provider failure, this throws and the notice stays
@@ -29,31 +29,25 @@ export const approveAndSendHoldNotice = action({
     if (!mail.apiKey) throw new Error("no AgentMail key configured (AGENTMAIL_API_KEY)");
     const claim: any = await ctx.runMutation(internal.evidenceDrift.claimHoldNoticeSend, { noticeId: args.noticeId });
     const notice = claim.notice;
-    if (claim.reconcile && Date.now() - claim.claimedAt >= 23 * 60 * 60 * 1000) {
-      throw new Error("Hold-notice send is older than the provider idempotency window and requires manual review");
-    }
-    if (!claim.reconcile) {
-      try {
-        await checkLimit(ctx, "sendHoldNotice", String(args.noticeId), identity.tokenIdentifier);
-      } catch (error) {
-        await ctx.runMutation(internal.evidenceDrift.releaseFreshHoldNoticeClaim, { noticeId: args.noticeId, claimedAt: claim.claimedAt });
-        throw error;
-      }
-    }
-    const sent = await replyAgentMailMessage(mail, claim.inbox.inboxId, claim.thread.agentmailMessageId, `${notice.subject}\n\n${notice.body}`, 20000, claim.dispatchKey);
-    await ctx.runMutation(internal.evidenceDrift.markHoldNoticeSent, {
-      noticeId: args.noticeId,
-      approvedBy: approver,
-      agentmailThreadId: sent.threadId,
-    });
-    await ctx.runMutation(internal.health.recordProviderRun, {
-      provider: "agentmail",
-      operation: "send_hold_notice",
-      status: "live",
-      latencyMs: sent.latencyMs,
-      requestId: sent.threadId,
-      meta: JSON.stringify({ approvedBy: approver }),
+    const { sent } = await guardedProviderSend(ctx, {
       ownerId: identity.tokenIdentifier,
+      rateLimit: claim.reconcile ? null : { name: "sendHoldNotice", key: String(args.noticeId) },
+      operation: "send_hold_notice",
+      failureRequestId: String(args.noticeId),
+      liveRun: (s) => ({ requestId: s.threadId, meta: JSON.stringify({ approvedBy: approver }) }),
+      claim,
+      releaseClaim: (c: any) =>
+        ctx.runMutation(internal.evidenceDrift.releaseFreshHoldNoticeClaim, { noticeId: args.noticeId, claimedAt: c.claimedAt }),
+      staleAfterMs: IDEMPOTENCY_WINDOW_MS,
+      staleMessage: "Hold-notice send is older than the provider idempotency window and requires manual review",
+      send: () =>
+        replyAgentMailMessage(mail, claim.inbox.inboxId, claim.thread.agentmailMessageId, `${notice.subject}\n\n${notice.body}`, 20000, claim.dispatchKey),
+      finish: (_c, s) =>
+        ctx.runMutation(internal.evidenceDrift.markHoldNoticeSent, {
+          noticeId: args.noticeId,
+          approvedBy: approver,
+          agentmailThreadId: s.threadId,
+        }),
     });
     return { noticeId: args.noticeId, agentmailThreadId: sent.threadId, providerStatus: "live" as const };
   },

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "./_generated/server";
 import { requireNeedOwner, requireOfferOwner } from "./model/auth";
+import { hasActiveRecall, resolveCertStatus } from "./lib/certStatus";
 
 const sourceStatus = v.union(v.literal("verified"), v.literal("unverified"), v.literal("needs_review"), v.literal("failed"));
 
@@ -33,19 +34,13 @@ export const addSourceCheck = internalMutation({
       matched: args.matched,
     });
     const offer = await ctx.db.get(args.offerId);
-    if (offer && args.type === "cert") {
-      const activeRecall = await ctx.db
-        .query("sourceChecks")
-        .withIndex("by_offer_recall_state", (q) =>
-          q.eq("offerId", args.offerId).eq("type", "recall").eq("status", "failed").eq("sourceAuthority", "authoritative").eq("matched", true),
-        )
-        .first();
-      await ctx.db.patch(args.offerId, {
-        certStatus: activeRecall ? "failed" : args.status === "verified" ? "verified" : args.status === "failed" ? "failed" : "needs_review",
-        updatedAt: Date.now(),
-      });
-    } else if (offer && args.type === "recall" && args.status === "failed" && args.sourceAuthority === "authoritative" && args.matched === true) {
-      await ctx.db.patch(args.offerId, { certStatus: "failed", updatedAt: Date.now() });
+    if (offer) {
+      const activeRecall = args.type === "cert" ? await hasActiveRecall(ctx, args.offerId) : false;
+      const next = resolveCertStatus(
+        { status: args.status, type: args.type, sourceAuthority: args.sourceAuthority, matched: args.matched },
+        { activeRecall },
+      );
+      if (next) await ctx.db.patch(args.offerId, { certStatus: next, updatedAt: Date.now() });
     }
     return checkId;
   },

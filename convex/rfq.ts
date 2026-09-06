@@ -1,11 +1,10 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
-import { requireNeedOwner, requireThreadOwner } from "./model/auth";
+import { requireNeedOwner, requireSupplierOwner, requireThreadOwner, supplierBelongsTo } from "./model/auth";
 import { normalizeMailbox } from "./lib/agentmail";
 
-export const getThreadForSend = internalQuery({
-  args: { threadId: v.id("rfqThreads") },
+export const getThreadForSend = internalQuery({  args: { threadId: v.id("rfqThreads") },
   returns: v.any(),
   handler: async (ctx, args) => {
     const thread = await ctx.db.get(args.threadId);
@@ -15,6 +14,26 @@ export const getThreadForSend = internalQuery({
       need: await ctx.db.get(thread.needId),
       supplier: await ctx.db.get(thread.supplierId),
     };
+  },
+});
+// Owner-checked thread detail for human-approved reminder nudges. Only a
+// thread that was really sent (provider message recorded) and is still
+// waiting for a reply can be nudged, and never a synthetic contact.
+export const getThreadForReminder = internalQuery({
+  args: { threadId: v.id("rfqThreads") },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const { thread, need, ownerId } = await requireThreadOwner(ctx, args.threadId);
+    if (thread.status !== "sent" || !thread.agentmailMessageId) {
+      throw new Error("Only unanswered RFQs can be nudged");
+    }
+    const { supplier } = await requireSupplierOwner(ctx, thread.supplierId);
+    if (normalizeMailbox(supplier.contactEmail)?.split("@")[1] === "synthetic.reliefgrid.test") {
+      throw new Error("Controlled synthetic contacts cannot receive email");
+    }
+    const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", thread.needId)).first();
+    if (!inbox) throw new Error("Need inbox not found");
+    return { thread, need, supplier, inbox, ownerId };
   },
 });
 
@@ -58,7 +77,7 @@ export const createRfqThreadsForNeed = mutation({
     let createdCount = 0;
     for (const supplierId of new Set(args.supplierIds)) {
       const supplier = await ctx.db.get(supplierId);
-      if (!supplier || supplier.ownerId !== ownerId) continue;
+      if (!supplierBelongsTo(supplier, ownerId)) continue;
 
       const already = await ctx.db
         .query("rfqThreads")
@@ -136,8 +155,7 @@ export const claimRfqSend = internalMutation({
       return { deduped: true, messageId: thread.agentmailMessageId, threadId: thread.agentmailThreadId };
     }
     const reconcile = thread.status === "sending";
-    const supplier = await ctx.db.get(thread.supplierId);
-    if (!supplier || supplier.ownerId !== ownerId) throw new Error("Supplier not found");
+    const { supplier } = await requireSupplierOwner(ctx, thread.supplierId);
     if (normalizeMailbox(supplier.contactEmail)?.split("@")[1] === "synthetic.reliefgrid.test") {
       throw new Error("Controlled synthetic contacts cannot receive email");
     }

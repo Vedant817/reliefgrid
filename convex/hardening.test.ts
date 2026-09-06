@@ -292,8 +292,7 @@ describe("authorization and decision integrity", () => {
     expect(offers[0].certStatus).toBe("failed");
   });
 
-  test("provider history is isolated by owner", async () => {
-    const raw = makeT();
+  test("provider history is isolated by owner", async () => {    const raw = makeT();
     const ownerA = asUser(raw, "provider-a", "Provider A");
     const ownerB = asUser(raw, "provider-b", "Provider B");
     await raw.mutation(internal.health.recordProviderRun, { provider: "firecrawl", operation: "a", status: "live", ownerId: "https://tests.reliefgrid.test|provider-a" });
@@ -302,6 +301,191 @@ describe("authorization and decision integrity", () => {
     const runsB: any[] = await ownerB.query(api.health.listProviderRuns, {});
     expect(runsA.map((run) => run.operation)).toEqual(["a"]);
     expect(runsB.map((run) => run.operation)).toEqual(["b"]);
+  });
+
+  test("need ownership lookup is scoped to the incident owner", async () => {
+    const raw = makeT();
+    const owner = asUser(raw, "recall-owner", "Recall Owner");
+    const stranger = asUser(raw, "recall-stranger", "Recall Stranger");
+    const { needId } = await seedNeed(owner);
+    const access: any = await owner.query(internal.needs.getNeedOwnership, { needId });
+    expect(access.ownerId).toContain("recall-owner");
+    await expect(stranger.query(internal.needs.getNeedOwnership, { needId })).rejects.toThrow(/not found/i);
+  });
+
+  test("public recall invalidates every affected offer and drafts a hold notice", async () => {
+    const t = asUser(makeT());
+    const { needId } = await seedNeed(t, { certRequired: "NSF/ANSI 53", evidenceKey: "NF-53" });
+    const suppliers: any[] = await seedSuppliers(t);
+    for (const [index, supplier] of suppliers.slice(0, 2).entries()) {
+      await t.mutation(internal.offers.upsertOfferVersion, {
+        needId, supplierId: supplier._id, qty: 50, unitPriceCents: 1000, arrivalAt: Date.now() + 60 * 60 * 1000,
+        certStatus: "verified", conditions: [], confidence: 0.97,
+        rawEmailId: `public-${index}`, rawBody: "50 certified units", language: "en",
+      });
+    }
+    const before: any[] = await t.query(api.offers.listOffersByNeed, { needId });
+    expect(before).toHaveLength(2);
+    const result: any = await t.mutation(internal.evidenceDrift.applyPublicRecall, {
+      needId,
+      offerIds: before.map((offer) => offer._id),
+      sourceUrl: "https://www.cpsc.gov/Recalls/test-recall",
+      quote: "RECALL ACTIVE: model NF-53 stop distribution",
+      contentHash: "test-hash",
+    });
+    expect(result.invalidated).toBe(2);
+    expect(result.totalQty).toBe(0);
+    const after: any[] = await t.query(api.offers.listOffersByNeed, { needId });
+    expect(after.every((offer) => offer.certStatus === "failed")).toBe(true);
+    const state: any = await t.query(api.evidenceDrift.getEvidenceDriftState, { needId });
+    expect(state.holdNotice?.status).toBe("draft");
+    await expect(
+      t.mutation(internal.evidenceDrift.applyPublicRecall, {
+        needId,
+        offerIds: before.map((offer) => offer._id),
+        sourceUrl: "https://www.cpsc.gov/Recalls/test-recall",
+        quote: "RECALL ACTIVE: model NF-53 stop distribution",
+        contentHash: "test-hash",
+      }),
+    ).rejects.toThrow(/already invalidated/);
+  });
+
+  test("a failed RFQ send releases its claim instead of stranding the thread", async () => {
+    const t = asUser(makeT());
+    const { needId } = await seedNeed(t);
+    const supplierId: string = await t.mutation(api.suppliers.upsertSupplier, {
+      name: "Real Supplier", contactEmail: "quotes@example.org", region: "Test region",
+    });
+    await t.mutation(internal.inboxes.ensureInbox, { needId, inboxId: "inbox-test", email: "test@example.test" });
+    await t.mutation(api.rfq.createRfqThreadsForNeed, { needId, supplierIds: [supplierId] });
+    const threads: any[] = await t.query(api.rfq.listThreadsByNeed, { needId });
+    const threadId = threads[0]._id;
+    const claim: any = await t.mutation(internal.rfq.claimRfqSend, { threadId });
+    expect(claim.reconcile).toBe(false);
+    // A stale release is a no-op; the matching release returns the thread to pending.
+    await t.mutation(internal.rfq.releaseFreshRfqClaim, { threadId, claimedAt: claim.claimedAt + 1 });
+    expect((await t.query(api.rfq.listThreadsByNeed, { needId }))[0].status).toBe("sending");
+    await t.mutation(internal.rfq.releaseFreshRfqClaim, { threadId, claimedAt: claim.claimedAt });
+    expect((await t.query(api.rfq.listThreadsByNeed, { needId }))[0].status).toBe("pending");
+  });
+
+  test("failed clarification and hold-notice sends restore the previous state", async () => {
+    const t = asUser(makeT());
+    const { needId } = await seedNeed(t, { certRequired: "NSF/ANSI 53", evidenceKey: "NF-53" });
+    const supplierId: string = await t.mutation(api.suppliers.upsertSupplier, {
+      name: "Real Supplier", contactEmail: "quotes@example.org", region: "Test region",
+    });
+    await t.mutation(internal.inboxes.ensureInbox, { needId, inboxId: "inbox-test", email: "test@example.test" });
+    await t.mutation(api.rfq.createRfqThreadsForNeed, { needId, supplierIds: [supplierId] });
+    const threadId = (await t.query(api.rfq.listThreadsByNeed, { needId }))[0]._id;
+    await t.mutation(internal.rfq.claimRfqSend, { threadId });
+    await t.mutation(internal.rfq.recordAgentMailSend, {
+      threadId, agentmailThreadId: "thread-test", agentmailMessageId: "message-test",
+    });
+    const clarification: any = await t.mutation(
+      internal.rfq.claimClarificationSend, { threadId, dispatchKey: "dispatch-test" },
+    );
+    expect(clarification.reconcile).toBe(false);
+    await t.mutation(
+      internal.rfq.releaseFreshClarificationClaim, { threadId, dispatchKey: "wrong-key", claimedAt: clarification.claimedAt },
+    );
+    expect((await t.query(api.rfq.listThreadsByNeed, { needId }))[0].status).toBe("clarification_sending");
+    await t.mutation(
+      internal.rfq.releaseFreshClarificationClaim, { threadId, dispatchKey: "dispatch-test", claimedAt: clarification.claimedAt },
+    );
+    expect((await t.query(api.rfq.listThreadsByNeed, { needId }))[0].status).toBe("sent");
+
+    const offerId: string = await t.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId, qty: 100, unitPriceCents: 1000, arrivalAt: Date.now() + 60 * 60 * 1000,
+      certStatus: "verified", conditions: [], confidence: 0.98,
+      rawEmailId: "hold-1", rawBody: "100 certified units", language: "en",
+    });
+    await t.mutation(internal.evidenceDrift.applyPublicRecall, {
+      needId,
+      offerIds: [offerId],
+      sourceUrl: "https://www.cpsc.gov/Recalls/test-recall",
+      quote: "RECALL ACTIVE: model NF-53 stop distribution",
+      contentHash: "test-hash",
+    });
+    const state: any = await t.query(api.evidenceDrift.getEvidenceDriftState, { needId });
+    expect(state.holdNotice?.status).toBe("draft");
+    expect(state.canSendHoldNotice).toBe(true);
+    const holdClaim: any = await t.mutation(internal.evidenceDrift.claimHoldNoticeSend, { noticeId: state.holdNotice._id });
+    expect(holdClaim.reconcile).toBe(false);
+    await t.mutation(internal.evidenceDrift.releaseFreshHoldNoticeClaim, { noticeId: state.holdNotice._id, claimedAt: holdClaim.claimedAt + 1 });
+    expect((await t.query(api.evidenceDrift.getEvidenceDriftState, { needId })).holdNotice.status).toBe("sending");
+    await t.mutation(internal.evidenceDrift.releaseFreshHoldNoticeClaim, { noticeId: state.holdNotice._id, claimedAt: holdClaim.claimedAt });
+    expect((await t.query(api.evidenceDrift.getEvidenceDriftState, { needId })).holdNotice.status).toBe("draft");
+  });
+
+  test("reminders are limited to unanswered RFQs owned by the caller", async () => {
+    const raw = makeT();
+    const owner = asUser(raw, "reminder-owner", "Reminder Owner");
+    const stranger = asUser(raw, "reminder-stranger", "Reminder Stranger");
+    const { needId } = await seedNeed(owner);
+    const supplierId: string = await owner.mutation(api.suppliers.upsertSupplier, {
+      name: "Real Supplier", contactEmail: "quotes@example.org", region: "Test region",
+    });
+    await owner.mutation(internal.inboxes.ensureInbox, { needId, inboxId: "inbox-test", email: "test@example.test" });
+    await owner.mutation(api.rfq.createRfqThreadsForNeed, { needId, supplierIds: [supplierId] });
+    const threadId = (await owner.query(api.rfq.listThreadsByNeed, { needId }))[0]._id;
+    await owner.mutation(internal.rfq.claimRfqSend, { threadId });
+    await owner.mutation(internal.rfq.recordAgentMailSend, {
+      threadId, agentmailThreadId: "thread-test", agentmailMessageId: "message-test",
+    });
+    const detail: any = await owner.query(internal.rfq.getThreadForReminder, { threadId });
+    expect(detail.thread._id).toBe(threadId);
+    await expect(stranger.query(internal.rfq.getThreadForReminder, { threadId })).rejects.toThrow(/not found/i);
+    await owner.mutation(internal.rfq.updateThreadStatus, { threadId, status: "replied" });
+    await expect(owner.query(internal.rfq.getThreadForReminder, { threadId })).rejects.toThrow(/unanswered/);
+  });
+
+  test("basket summary reports per-need coverage within one incident", async () => {
+    const raw = makeT();
+    const owner = asUser(raw, "basket-owner", "Basket Owner");
+    const stranger = asUser(raw, "basket-stranger", "Basket Stranger");
+    const { incidentId, needId } = await seedNeed(owner, { qty: 100 });
+    const suppliers: any[] = await seedSuppliers(owner);
+    await owner.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId: suppliers[0]._id, qty: 100, unitPriceCents: 1000, arrivalAt: Date.now() + 60 * 60 * 1000,
+      certStatus: "verified", conditions: [], confidence: 0.98,
+      rawEmailId: "basket-1", rawBody: "100 units", language: "en",
+    });
+    await owner.mutation(api.allocations.computeAllocation, { needId });
+    const summary: any[] = await owner.query(api.allocations.listPlansByIncident, { incidentId });
+    expect(summary).toHaveLength(1);
+    expect(summary[0]).toMatchObject({ qty: 100, totalQty: 100, status: "proposed" });
+    await expect(stranger.query(api.allocations.listPlansByIncident, { incidentId })).rejects.toThrow(/not found/i);
+  });
+
+  test("a drift-minted plan on offers with field evidence stays approvable", async () => {
+    const t = asUser(makeT());
+    const { needId } = await seedNeed(t, { certRequired: "NSF/ANSI 53", evidenceKey: "NF-53" });
+    const suppliers: any[] = await seedSuppliers(t);
+    const span = (quote: string) => ({ confidence: 0.98, start: 0, end: quote.length, quote });
+    const fieldEvidence = {
+      qty: span("100 units"), price: span("$10 each"), arrival: span("by Friday"), cert: span("NSF/ANSI 53"),
+    };
+    const ids = [];
+    for (const [index, supplier] of suppliers.slice(0, 2).entries()) {
+      ids.push(await t.mutation(internal.offers.upsertOfferVersion, {
+        needId, supplierId: supplier._id, qty: 100, unitPriceCents: 1000 + index * 100,
+        arrivalAt: Date.now() + 60 * 60 * 1000, certStatus: "verified", conditions: [], confidence: 0.98,
+        fieldEvidence, rawEmailId: `evidence-${index}`, rawBody: "100 certified units", language: "en",
+      }));
+    }
+    await t.mutation(internal.evidenceDrift.applyPublicRecall, {
+      needId,
+      offerIds: [ids[0]],
+      sourceUrl: "https://www.cpsc.gov/Recalls/test-recall",
+      quote: "RECALL ACTIVE: model NF-53 stop distribution",
+      contentHash: "test-hash",
+    });
+    const plans: any[] = await t.query(api.allocations.listAllocationPlans, { needId });
+    expect(plans[0].totalQty).toBe(100);
+    await t.mutation(api.allocations.approvePlan, { planId: plans[0]._id });
+    const approved: any[] = await t.query(api.allocations.listAllocationPlans, { needId });
+    expect(approved[0].status).toBe("approved");
   });
 
   test("public demo bulletin exposes only display fields and recall setup can roll back", async () => {

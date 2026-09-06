@@ -2,120 +2,140 @@ import { v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
 import { allocateOffers } from "./lib/allocate";
-import { requireNeedOwner, requirePlanOwner } from "./model/auth";
+import { requireIncidentOwner, requireNeedOwner, requirePlanOwner, requireSupplierOwner } from "./model/auth";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { allocationInputHash } from "./lib/allocationHash";
 
 async function computeAllocationImpl(ctx: MutationCtx, args: { needId: Id<"needs"> }) {
-    const need = await ctx.db.get(args.needId);
-    if (!need) throw new Error("Need not found");
+  return await recomputeAllocation(ctx, args.needId, {
+    supersedeApproved: false,
+    allowEmpty: false,
+    lineReason: "selected: cheapest feasible covering",
+  });
+}
 
-    const offers = await ctx.db
-      .query("offers")
-      .withIndex("by_need", (q) => q.eq("needId", args.needId))
-      .take(201);
-    if (offers.length > 200) throw new Error("This need exceeds the 200-offer allocation limit");
+// The single transactional recompute behind every path that (re)plans a
+// need: user recompute, extraction, verification, evidence drift, and guided
+// recovery. One canonical enrichment shape feeds both the allocator and the
+// input hash, so any plan it mints carries a hash the approval freshness
+// check can verify — drift-minted plans used to hash without field evidence
+// and die as stale at approval time.
+export async function recomputeAllocation(
+  ctx: MutationCtx,
+  needId: Id<"needs">,
+  opts: { supersedeApproved: boolean; allowEmpty: boolean; lineReason: string },
+) {
+  const need = await ctx.db.get(needId);
+  if (!need) throw new Error("Need not found");
 
-    const enriched = await Promise.all(
-      offers.map(async (o) => {
-        const supplier = await ctx.db.get(o.supplierId);
-        return {
-          offerId: o._id,
-          supplierId: o.supplierId,
-          supplierName: supplier?.name ?? o.supplierId,
-          qty: o.qty,
-          unitPriceCents: o.unitPriceCents,
-          arrivalAt: o.arrivalAt,
-          certStatus: o.certStatus,
-           confidence: o.confidence,
-          fieldEvidence: o.fieldEvidence,
-        };
-      }),
-    );
+  const offers = await ctx.db
+    .query("offers")
+    .withIndex("by_need", (q) => q.eq("needId", needId))
+    .take(201);
+  if (offers.length > 200) throw new Error("This need exceeds the 200-offer allocation limit");
 
-    const result = allocateOffers(enriched, {
-      qty: need.qty,
-      budgetCents: need.budgetCents,
-      deadlineAt: need.deadlineAt,
-      certRequired: need.certRequired,
-      partialAllowed: need.partialAllowed,
+  const enriched = await Promise.all(
+    offers.map(async (o) => {
+      const supplier = await ctx.db.get(o.supplierId);
+      return {
+        offerId: o._id,
+        supplierId: o.supplierId,
+        supplierName: supplier?.name ?? "Unknown supplier",
+        qty: o.qty,
+        unitPriceCents: o.unitPriceCents,
+        arrivalAt: o.arrivalAt,
+        certStatus: o.certStatus,
+        confidence: o.confidence,
+        fieldEvidence: o.fieldEvidence,
+      };
+    }),
+  );
+
+  const result = allocateOffers(enriched, {
+    qty: need.qty,
+    budgetCents: need.budgetCents,
+    deadlineAt: need.deadlineAt,
+    certRequired: need.certRequired,
+    partialAllowed: need.partialAllowed,
+  });
+
+  // No offers at all: report infeasible without minting a vacuous plan,
+  // unless the caller is a drift path that must always leave a fresh plan.
+  if (offers.length === 0 && !opts.allowEmpty) {
+    return { planId: null, ...result };
+  }
+
+  const existingPlans = await ctx.db
+    .query("allocationPlans")
+    .withIndex("by_need", (q) => q.eq("needId", needId))
+    .take(101);
+
+  // Idempotent recompute: identical inputs reuse the current live plan.
+  const inputHash = allocationInputHash(need, enriched);
+  const identical = existingPlans.find(
+    (p) => (p.status === "proposed" || p.status === "approved") && p.inputHash === inputHash,
+  );
+  if (identical) {
+    return { planId: identical._id, ...result, deduped: true };
+  }
+  if (existingPlans.length >= 100) throw new Error("This need has reached the 100-plan history limit");
+
+  // Supersede previous proposed plans; drift paths additionally dethrone an
+  // approved plan the new evidence invalidates.
+  for (const p of existingPlans) {
+    if (p.status === "proposed" || (opts.supersedeApproved && p.status === "approved")) {
+      await ctx.db.patch(p._id, { status: "superseded" });
+    }
+  }
+
+  const planId = await ctx.db.insert("allocationPlans", {
+    needId,
+    status: "proposed",
+    totalCostCents: result.totalCostCents,
+    totalQty: result.totalQty,
+    createdAt: Date.now(),
+    decisionTrace: result.trace,
+    inputHash,
+  });
+
+  for (const s of result.selected) {
+    await ctx.db.insert("allocationLines", {
+      planId,
+      supplierId: s.supplierId as any,
+      offerId: s.offerId as any,
+      qty: s.qty,
+      costCents: s.qty * s.unitPriceCents,
+      reason: opts.lineReason,
     });
-
-    // No offers at all: report infeasible without minting a vacuous plan.
-    if (offers.length === 0) {
-      return { planId: null, ...result };
-    }
-
-    const existingPlans = await ctx.db
-      .query("allocationPlans")
-      .withIndex("by_need", (q) => q.eq("needId", args.needId))
-      .take(101);
-
-    // Idempotent recompute: identical inputs reuse the current proposed plan.
-    const inputHash = allocationInputHash(need, enriched);
-    const identical = existingPlans.find(
-      (p) => (p.status === "proposed" || p.status === "approved") && p.inputHash === inputHash,
-    );
-    if (identical) {
-      return { planId: identical._id, ...result, deduped: true };
-    }
-    if (existingPlans.length >= 100) throw new Error("This need has reached the 100-plan history limit");
-
-    // Supersede previous proposed plans
-    for (const p of existingPlans) {
-      if (p.status === "proposed") {
-        await ctx.db.patch(p._id, { status: "superseded" });
-      }
-    }
-
-    const planId = await ctx.db.insert("allocationPlans", {
-      needId: args.needId,
-      status: "proposed",
-      totalCostCents: result.totalCostCents,
-      totalQty: result.totalQty,
-      createdAt: Date.now(),
-      decisionTrace: result.trace,
-      inputHash,
-    });
-
-    for (const s of result.selected) {
-      await ctx.db.insert("allocationLines", {
-        planId,
-        supplierId: s.supplierId as any,
-        offerId: s.offerId as any,
-        qty: s.qty,
-        costCents: s.qty * s.unitPriceCents,
-        reason: "selected: cheapest feasible covering",
-      });
-    }
-    // Record rejected as audit for traceability
-    for (const r of result.rejected) {
-      await writeAudit(ctx, {
-        entity: "allocationPlans",
-        entityId: planId,
-        action: "rejected_offer",
-        actor: "allocator",
-        incidentId: need.incidentId,
-        meta: JSON.stringify({ supplierId: r.supplierId, reason: r.reason }),
-      });
-    }
-
+  }
+  // Record rejected as audit for traceability
+  for (const r of result.rejected) {
     await writeAudit(ctx, {
       entity: "allocationPlans",
       entityId: planId,
-      action: "create",
+      action: "rejected_offer",
       actor: "allocator",
       incidentId: need.incidentId,
-      meta: JSON.stringify({ totalQty: result.totalQty, feasible: result.feasible }),
+      meta: JSON.stringify({ supplierId: r.supplierId, reason: r.reason }),
     });
+  }
 
-    // Update need status
-    await ctx.db.patch(args.needId, {
-      status: result.feasible ? "planning" : "awaiting_responses",
-    });
+  await writeAudit(ctx, {
+    entity: "allocationPlans",
+    entityId: planId,
+    action: "create",
+    actor: "allocator",
+    incidentId: need.incidentId,
+    meta: JSON.stringify({ totalQty: result.totalQty, feasible: result.feasible }),
+  });
 
-    return { planId, ...result };
+  // Update need status
+  await ctx.db.patch(needId, {
+    status: result.feasible ? "planning" : "awaiting_responses",
+  });
+
+  return { planId, ...result };
 }
 
 export const computeAllocation = mutation({
@@ -166,6 +186,37 @@ export const listAllocationPlans = query({
     return enriched;
   },
 });
+// Basket view: the latest plan totals for every need in an incident, so a
+// multi-item request can be summarized as "x of y items covered".
+export const listPlansByIncident = query({
+  args: { incidentId: v.id("incidents") },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    await requireIncidentOwner(ctx, args.incidentId);
+    const needs = await ctx.db
+      .query("needs")
+      .withIndex("by_incident", (q) => q.eq("incidentId", args.incidentId))
+      .take(100);
+    return await Promise.all(
+      needs.map(async (need) => {
+        const plan = await ctx.db
+          .query("allocationPlans")
+          .withIndex("by_need", (q) => q.eq("needId", need._id))
+          .order("desc")
+          .first();
+        return {
+          needId: need._id,
+          item: need.item,
+          qty: need.qty,
+          budgetCents: need.budgetCents,
+          totalQty: plan?.totalQty ?? 0,
+          totalCostCents: plan?.totalCostCents ?? 0,
+          status: plan?.status ?? "none",
+        };
+      }),
+    );
+  },
+});
 
 export const getLatestPlan = query({
   args: { needId: v.id("needs") },
@@ -203,7 +254,7 @@ export const approvePlan = mutation({
   },
   returns: v.id("allocationPlans"),
   handler: async (ctx, args) => {
-    const { plan, ownerId } = await requirePlanOwner(ctx, args.planId);
+    const { plan } = await requirePlanOwner(ctx, args.planId);
     if (plan.status !== "proposed") throw new Error(`Only proposed plans can be approved (got ${plan.status})`);
     if (plan.totalQty <= 0) throw new Error("Cannot approve a plan covering zero units");
     const identity = await ctx.auth.getUserIdentity();
@@ -215,8 +266,7 @@ export const approvePlan = mutation({
     const currentOffers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", plan.needId)).take(201);
     if (currentOffers.length > 200) throw new Error("This need exceeds the 200-offer approval limit");
     const enriched = await Promise.all(currentOffers.map(async (offer) => {
-      const supplier = await ctx.db.get(offer.supplierId);
-      if (!supplier || supplier.ownerId !== ownerId) throw new Error("Plan references an unavailable supplier");
+      const { supplier } = await requireSupplierOwner(ctx, offer.supplierId, "Plan references an unavailable supplier");
       return {
         offerId: offer._id,
         supplierId: offer.supplierId,

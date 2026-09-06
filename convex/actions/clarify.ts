@@ -6,6 +6,7 @@ import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
 import { chatJson, resolveLlmProvider } from "../lib/llm";
 import { replyAgentMailMessage, resolveAgentMail } from "../lib/agentmail";
+import { guardedProviderSend, IDEMPOTENCY_WINDOW_MS } from "../lib/sendGuard";
 import { checkLimit } from "../rateLimits";
 
 type OfferForClarification = {
@@ -119,29 +120,22 @@ export const approveAndSendClarification = action({
     const threads: Array<{ _id: Id<"rfqThreads">; supplierId: Id<"suppliers">; agentmailMessageId?: string }> = await ctx.runQuery(api.rfq.listThreadsByNeed, { needId: offer.needId });
     const thread = threads.find((candidate) => candidate.supplierId === offer.supplierId);
     if (!thread?.agentmailMessageId) throw new Error("A sent supplier thread is required before clarification");
+    const agentmailMessageId: string = thread.agentmailMessageId;
     const dispatchKey = `clarification-${String(thread._id)}-${await dispatchHash(question)}`;
     const claim: any = await ctx.runMutation(internal.rfq.claimClarificationSend, { threadId: thread._id, dispatchKey });
-    if (claim.reconcile && Date.now() - claim.claimedAt >= 23 * 60 * 60 * 1000) {
-      throw new Error("Clarification send is older than the provider idempotency window and requires manual review");
-    }
-    if (!claim.reconcile) {
-      try {
-        await checkLimit(ctx, "sendClarification", String(args.offerId), identity.tokenIdentifier);
-      } catch (error) {
-        await ctx.runMutation(internal.rfq.releaseFreshClarificationClaim, { threadId: thread._id, dispatchKey, claimedAt: claim.claimedAt });
-        throw error;
-      }
-    }
-    const sent = await replyAgentMailMessage(mail, claim.inbox.inboxId, thread.agentmailMessageId, question, 20000, dispatchKey);
-    await ctx.runMutation(internal.rfq.updateThreadStatus, { threadId: thread._id, status: "clarification_sent" });
-    await ctx.runMutation(internal.health.recordProviderRun, {
-      provider: "agentmail",
-      operation: "send_clarification",
-      status: "live",
-      latencyMs: sent.latencyMs,
-      requestId: sent.threadId,
-      meta: JSON.stringify({ approvedBy: identity.tokenIdentifier, unresolved }),
+    const { sent } = await guardedProviderSend(ctx, {
       ownerId: identity.tokenIdentifier,
+      rateLimit: claim.reconcile ? null : { name: "sendClarification", key: String(args.offerId) },
+      operation: "send_clarification",
+      failureRequestId: String(thread._id),
+      liveRun: (s) => ({ requestId: s.threadId, meta: JSON.stringify({ approvedBy: identity.tokenIdentifier, unresolved }) }),
+      claim,
+      releaseClaim: (c: any) =>
+        ctx.runMutation(internal.rfq.releaseFreshClarificationClaim, { threadId: thread._id, dispatchKey, claimedAt: c.claimedAt }),
+      staleAfterMs: IDEMPOTENCY_WINDOW_MS,
+      staleMessage: "Clarification send is older than the provider idempotency window and requires manual review",
+      send: () => replyAgentMailMessage(mail, claim.inbox.inboxId, agentmailMessageId, question, 20000, dispatchKey),
+      finish: () => ctx.runMutation(internal.rfq.updateThreadStatus, { threadId: thread._id, status: "clarification_sent" }),
     });
     return { question, threadId: thread._id, agentmailThreadId: sent.threadId, providerStatus: "live" as const };
   },

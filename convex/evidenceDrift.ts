@@ -1,56 +1,14 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query, type MutationCtx } from "./_generated/server";
+import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
-import { allocateOffers } from "./lib/allocate";
 import { writeAudit } from "./lib/audit";
 import { offersByNeed } from "./offerTotals";
 import { requireNeedOwner } from "./model/auth";
-import { allocationInputHash } from "./lib/allocationHash";
+import { recomputeAllocation } from "./allocations";
 
 const BULLETIN_KEY = "filter-nsf53";
 const DEMO_TITLE = "Flood Shelter - North District";
-
-async function recompute(ctx: MutationCtx, needId: Id<"needs">) {
-  const need = await ctx.db.get(needId);
-  if (!need) throw new Error("Need not found");
-  const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", needId)).take(200);
-  const inputs = await Promise.all(offers.map(async (offer) => ({
-    offerId: String(offer._id),
-    supplierId: String(offer.supplierId),
-    supplierName: (await ctx.db.get(offer.supplierId))?.name ?? "Unknown supplier",
-    qty: offer.qty,
-    unitPriceCents: offer.unitPriceCents,
-    arrivalAt: offer.arrivalAt,
-    certStatus: offer.certStatus,
-    confidence: offer.confidence,
-  })));
-  const result = allocateOffers(inputs, need);
-  const plans = await ctx.db.query("allocationPlans").withIndex("by_need", (q) => q.eq("needId", needId)).take(100);
-  for (const plan of plans) {
-    if (plan.status === "proposed" || plan.status === "approved") await ctx.db.patch(plan._id, { status: "superseded" });
-  }
-  const planId = await ctx.db.insert("allocationPlans", {
-    needId,
-    status: "proposed",
-    totalCostCents: result.totalCostCents,
-    totalQty: result.totalQty,
-    createdAt: Date.now(),
-    decisionTrace: result.trace,
-    inputHash: allocationInputHash(need, inputs),
-  });
-  for (const selected of result.selected) {
-    await ctx.db.insert("allocationLines", {
-      planId,
-      supplierId: selected.supplierId as Id<"suppliers">,
-      offerId: selected.offerId as Id<"offers">,
-      qty: selected.qty,
-      costCents: selected.qty * selected.unitPriceCents,
-      reason: "selected after evidence recheck",
-    });
-  }
-  await ctx.db.patch(needId, { status: result.totalQty >= need.qty ? "planning" : "awaiting_responses" });
-  return { planId, totalQty: result.totalQty, totalCostCents: result.totalCostCents };
-}
 
 export const getEvidenceDriftState = query({
   args: { needId: v.optional(v.id("needs")) },
@@ -109,11 +67,12 @@ export const applyVerifiedRecall = internalMutation({
     if (!offer) throw new Error("Apex demo offer not found");
 
     const citationUrl = args.sourceUrl;
-    await ctx.db.insert("sourceChecks", {
+    // Written through the shared check seam so the recall rule — not this
+    // caller — derives the failed status.
+    await ctx.runMutation(internal.sourceChecks.addSourceCheck, {
       offerId: offer._id,
       url: citationUrl,
       quote: args.quote,
-      retrievedAt: Date.now(),
       status: "failed",
       reason: "Controlled bulletin changed after initial verification",
       type: "recall",
@@ -122,7 +81,6 @@ export const applyVerifiedRecall = internalMutation({
       contentHash: args.contentHash,
       matched: true,
     });
-    await ctx.db.patch(offer._id, { certStatus: "failed", updatedAt: Date.now() });
 
     const existingNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
     for (const notice of existingNotices) await ctx.db.delete(notice._id);
@@ -138,7 +96,12 @@ export const applyVerifiedRecall = internalMutation({
     // No provider run is recorded here: the controlled bulletin is local-only
     // so this recheck is simulated, and the ledger only stores real attempts.
     // The invalidation itself is audited below.
-    const result = await recompute(ctx, need._id);
+    const result = await recomputeAllocation(ctx, need._id, {
+      supersedeApproved: true,
+      allowEmpty: true,
+      lineReason: "selected after evidence recheck",
+    });
+    if (!result.planId) throw new Error("Evidence recheck produced no plan");
     await writeAudit(ctx, {
       entity: "offers",
       entityId: offer._id,
@@ -157,7 +120,81 @@ export const applyVerifiedRecall = internalMutation({
         causalDiff: "Source recall removed Apex; plan coverage changed 100 -> 30",
       }),
     });
-    return result;
+    return { planId: result.planId, totalQty: result.totalQty, totalCostCents: result.totalCostCents };
+  },
+});
+
+// General recall path for REAL public sources (CPSC/FDA/NSF). Unlike
+// applyVerifiedRecall it works on any need and any offer: the caller must
+// have confirmed an authoritative recall page matching the offer's product
+// identifiers. Same transactional guarantees: failed source check, offer
+// invalidation, draft hold notice, recompute, audit.
+export const applyPublicRecall = internalMutation({
+  args: { needId: v.id("needs"), offerIds: v.array(v.id("offers")), sourceUrl: v.string(), quote: v.string(), contentHash: v.string() },
+  returns: v.object({ planId: v.id("allocationPlans"), totalQty: v.number(), totalCostCents: v.number(), invalidated: v.number() }),
+  handler: async (ctx, args) => {
+    const need = await ctx.db.get(args.needId);
+    if (!need) throw new Error("Need not found");
+    const incident = await ctx.db.get(need.incidentId);
+    if (!incident?.ownerId) throw new Error("Incident owner not found");
+    const invalidated: { id: Id<"offers">; supplierName: string; previousCertStatus: string }[] = [];
+    for (const offerId of new Set(args.offerIds)) {
+      const offer = await ctx.db.get(offerId);
+      if (!offer || offer.needId !== need._id) throw new Error("Offer not found");
+      if (offer.certStatus === "failed") continue;
+      await ctx.runMutation(internal.sourceChecks.addSourceCheck, {
+        offerId: offer._id,
+        url: args.sourceUrl,
+        quote: args.quote,
+        status: "failed",
+        reason: "Public recall source conflicts with the offer",
+        type: "recall",
+        claim: need.certRequired ?? need.item,
+        sourceAuthority: "authoritative",
+        contentHash: args.contentHash,
+        matched: true,
+      });
+      const supplier = await ctx.db.get(offer.supplierId);
+      invalidated.push({ id: offer._id, supplierName: supplier?.name ?? "Unknown supplier", previousCertStatus: offer.certStatus });
+    }
+    if (!invalidated.length) throw new Error("All matching offers are already invalidated");
+
+    const existingNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
+    for (const notice of existingNotices) await ctx.db.delete(notice._id);
+    await ctx.db.insert("holdNotices", {
+      needId: need._id,
+      offerId: invalidated[0].id,
+      status: "draft",
+      subject: "HOLD: allocation pending recall review",
+      body: `Do not dispatch the ${invalidated.map((o) => o.supplierName).join(", ")} allocation. A public recall source reports a matching recall. Human approval is required before this notice is sent.`,
+      citationUrl: args.sourceUrl,
+      createdAt: Date.now(),
+    });
+    const result = await recomputeAllocation(ctx, need._id, {
+      supersedeApproved: true,
+      allowEmpty: true,
+      lineReason: "selected after evidence recheck",
+    });
+    if (!result.planId) throw new Error("Evidence recheck produced no plan");
+    await writeAudit(ctx, {
+      entity: "offers",
+      entityId: String(invalidated[0].id),
+      action: "invalidated_by_recall",
+      actor: "evidence-monitor",
+      meta: JSON.stringify({ citationUrl: args.sourceUrl, invalidated: invalidated.map((o) => String(o.id)), nextCertStatus: "failed" }),
+      incidentId: need.incidentId,
+      snapshot: JSON.stringify({
+        incident: { id: String(need.incidentId), title: incident.title },
+        need: { id: String(need._id), item: need.item, qty: need.qty },
+        plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents },
+      }),
+    });
+    return {
+      planId: result.planId,
+      totalQty: result.totalQty,
+      totalCostCents: result.totalCostCents,
+      invalidated: invalidated.length,
+    };
   },
 });
 
@@ -190,7 +227,12 @@ export const addReplacementOffer = mutation({
       const replacementDoc = await ctx.db.get(offerId);
       await offersByNeed.insert(ctx, replacementDoc!);
     }
-    const result = await recompute(ctx, need._id);
+    const result = await recomputeAllocation(ctx, need._id, {
+      supersedeApproved: true,
+      allowEmpty: true,
+      lineReason: "selected after evidence recheck",
+    });
+    if (!result.planId) throw new Error("Evidence recheck produced no plan");
     await writeAudit(ctx, {
       entity: "incidents", entityId: need.incidentId, action: "replacement_plan_proposed", actor: "allocator", incidentId: need.incidentId,
       snapshot: JSON.stringify({
@@ -205,7 +247,7 @@ export const addReplacementOffer = mutation({
         causalDiff: "Replacement stock restored plan coverage 30 -> 100",
       }),
     });
-    return result;
+    return { planId: result.planId, totalQty: result.totalQty, totalCostCents: result.totalCostCents };
   },
 });
 

@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { requireOwnerId } from "./model/auth";
+import { requireOwnerId, requireSupplierOwner } from "./model/auth";
 import { normalizeMailbox } from "./lib/agentmail";
 
 export const listSuppliers = query({
@@ -16,9 +16,7 @@ export const getSupplier = query({
   args: { supplierId: v.id("suppliers") },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const ownerId = await requireOwnerId(ctx);
-    const supplier = await ctx.db.get(args.supplierId);
-    if (!supplier || supplier.ownerId !== ownerId) throw new Error("Supplier not found");
+    const { supplier } = await requireSupplierOwner(ctx, args.supplierId);
     return supplier;
   },
 });

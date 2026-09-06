@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
+import { hasActiveRecall } from "./lib/certStatus";
 import { offersByNeed } from "./offerTotals";
-import { requireNeedOwner, requireOfferOwner } from "./model/auth";
+import { requireNeedOwner, requireOfferOwner, supplierBelongsTo } from "./model/auth";
 
 const evidenceSpan = v.object({ confidence: v.number(), start: v.number(), end: v.number(), quote: v.string() });
 const fieldEvidence = v.object({ qty: evidenceSpan, price: evidenceSpan, arrival: evidenceSpan, cert: evidenceSpan });
@@ -15,7 +16,7 @@ export const getExtractionContext = internalQuery({
     const supplier = await ctx.db.get(args.supplierId);
     if (!need || !supplier) throw new Error("Extraction context not found");
     const incident = await ctx.db.get(need.incidentId);
-    if (!incident?.ownerId || supplier.ownerId !== incident.ownerId) throw new Error("Supplier does not belong to the incident owner");
+    if (!incident?.ownerId || !supplierBelongsTo(supplier, incident.ownerId)) throw new Error("Supplier does not belong to the incident owner");
     return { ownerId: incident.ownerId };
   },
 });
@@ -46,14 +47,7 @@ export const upsertOfferVersion = internalMutation({
       .query("offers")
       .withIndex("by_need_and_supplier", (q) => q.eq("needId", args.needId).eq("supplierId", args.supplierId))
       .first();
-    const activeRecall = existingOffer
-      ? await ctx.db
-          .query("sourceChecks")
-          .withIndex("by_offer_recall_state", (q) =>
-            q.eq("offerId", existingOffer._id).eq("type", "recall").eq("status", "failed").eq("sourceAuthority", "authoritative").eq("matched", true),
-          )
-          .first()
-      : null;
+    const activeRecall = existingOffer ? await hasActiveRecall(ctx, existingOffer._id) : false;
     const certStatus = activeRecall ? "failed" : args.certStatus;
 
     // Replay guard: same email seen before must carry identical terms.

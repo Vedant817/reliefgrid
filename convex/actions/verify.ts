@@ -4,28 +4,14 @@ import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
 import { resolveFirecrawl, scrapeViaComponent } from "../lib/firecrawl";
+import {
+  RECALL_LANGUAGE,
+  authorityForHostname,
+  containsExactPhrase,
+  normalized,
+  sha256Hex,
+} from "../lib/evidence";
 import { checkLimit } from "../rateLimits";
-
-async function sha256(value: string) {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-}
-
-function sourceAuthority(hostname: string) {
-  const host = hostname.toLowerCase();
-  return host.endsWith(".gov") || host === "nsf.org" || host.endsWith(".nsf.org") || host === "who.int" || host.endsWith(".who.int")
-    ? "authoritative" as const
-    : "supporting" as const;
-}
-
-function normalized(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-}
-
-function containsExactPhrase(body: string, phrase: string) {
-  const escaped = normalized(phrase).replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
-  return Boolean(escaped) && new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`).test(body);
-}
 
 // Live-only Firecrawl verification. There is no mock lane: missing keys or
 // provider errors throw after recording a failed run, so verification state
@@ -76,13 +62,13 @@ export const verifyOffer = action({
     }
 
     const quote = `${scraped.title} — ${scraped.quote}`;
-    const authority = sourceAuthority(host);
+    const authority = authorityForHostname(host);
     const body = normalized(quote);
     const claim = args.type === "cert" ? offer.need.certRequired ?? "certification" : `${args.type} status`;
     const phraseMatched = args.type === "cert"
       ? Boolean(offer.need.certRequired && body.includes(normalized(offer.need.certRequired)))
       : args.type === "recall"
-        ? /recall active|recalled|do not use|stop distribution/.test(body)
+        ? RECALL_LANGUAGE.test(body)
         : false;
     const productMatched = Boolean(offer.need.evidenceKey && containsExactPhrase(body, offer.need.evidenceKey));
     const claimMatched = phraseMatched && productMatched;
@@ -104,7 +90,7 @@ export const verifyOffer = action({
       type: args.type,
       claim,
       sourceAuthority: authority,
-      contentHash: await sha256(quote),
+      contentHash: await sha256Hex(quote),
       matched: claimMatched,
     });
     await ctx.runMutation(internal.allocations.computeAllocationInternal, { needId: offer.needId });

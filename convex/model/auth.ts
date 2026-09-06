@@ -14,6 +14,24 @@ export async function requireOwnerId(ctx: AuthCtx) {
   return (await requireIdentity(ctx)).tokenIdentifier;
 }
 
+// Pure supplier-membership predicate. Incident-scoped callers (no caller
+// identity, e.g. webhook-driven extraction) compare against the incident
+// owner's id; everything else goes through requireSupplierOwner.
+export function supplierBelongsTo(supplier: { ownerId?: string } | null, ownerId: string) {
+  return !!supplier && supplier.ownerId === ownerId;
+}
+
+export async function requireSupplierOwner(
+  ctx: DbCtx,
+  supplierId: Id<"suppliers">,
+  message = "Supplier not found",
+) {
+  const ownerId = await requireOwnerId(ctx);
+  const supplier = await ctx.db.get(supplierId);
+  if (!supplier || !supplierBelongsTo(supplier, ownerId)) throw new Error(message);
+  return { supplier, ownerId };
+}
+
 export async function requireIncidentOwner(ctx: DbCtx, incidentId: Id<"incidents">) {
   const ownerId = await requireOwnerId(ctx);
   const incident = await ctx.db.get(incidentId);
