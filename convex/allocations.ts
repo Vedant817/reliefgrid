@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
+import { buildDriftSnapshot } from "./lib/drift";
 import { allocateOffers } from "./lib/allocate";
 import { requireIncidentOwner, requireNeedOwner, requirePlanOwner, requireSupplierOwner } from "./model/auth";
 import { internal } from "./_generated/api";
@@ -329,7 +330,7 @@ export const approvePlan = mutation({
       action: "approved",
       actor: approver,
       incidentId: need.incidentId,
-      snapshot: JSON.stringify({
+      snapshot: buildDriftSnapshot({
         incident: { id: String(need.incidentId) },
         need: { id: String(plan.needId), item: need.item, qty: need.qty },
         offers: approvedOffers,

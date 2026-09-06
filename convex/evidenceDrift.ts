@@ -3,7 +3,7 @@ import { internalMutation, internalQuery, mutation, query } from "./_generated/s
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { writeAudit } from "./lib/audit";
-import { offersByNeed } from "./offerTotals";
+import { buildDriftSnapshot, ensureDeltaReplacement, replaceHoldNotice } from "./lib/drift";
 import { requireNeedOwner } from "./model/auth";
 import { recomputeAllocation } from "./allocations";
 
@@ -82,16 +82,12 @@ export const applyVerifiedRecall = internalMutation({
       matched: true,
     });
 
-    const existingNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
-    for (const notice of existingNotices) await ctx.db.delete(notice._id);
-    await ctx.db.insert("holdNotices", {
+    await replaceHoldNotice(ctx, {
       needId: need._id,
       offerId: offer._id,
-      status: "draft",
       subject: "HOLD: Apex NF-53 allocation pending recall review",
       body: "Do not dispatch the Apex NF-53 allocation. A manufacturer bulletin now reports an active recall. Human approval is required before this notice is sent.",
       citationUrl,
-      createdAt: Date.now(),
     });
     // No provider run is recorded here: the controlled bulletin is local-only
     // so this recheck is simulated, and the ledger only stores real attempts.
@@ -109,7 +105,7 @@ export const applyVerifiedRecall = internalMutation({
       actor: "evidence-monitor",
       meta: JSON.stringify({ citationUrl, previousCertStatus: "verified", nextCertStatus: "failed" }),
       incidentId: need.incidentId,
-      snapshot: JSON.stringify({
+      snapshot: buildDriftSnapshot({
         incident: { id: String(need.incidentId), title: DEMO_TITLE },
         need: { id: String(need._id), item: need.item, qty: need.qty },
         offers: [
@@ -159,16 +155,12 @@ export const applyPublicRecall = internalMutation({
     }
     if (!invalidated.length) throw new Error("All matching offers are already invalidated");
 
-    const existingNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
-    for (const notice of existingNotices) await ctx.db.delete(notice._id);
-    await ctx.db.insert("holdNotices", {
+    await replaceHoldNotice(ctx, {
       needId: need._id,
       offerId: invalidated[0].id,
-      status: "draft",
       subject: "HOLD: allocation pending recall review",
       body: `Do not dispatch the ${invalidated.map((o) => o.supplierName).join(", ")} allocation. A public recall source reports a matching recall. Human approval is required before this notice is sent.`,
       citationUrl: args.sourceUrl,
-      createdAt: Date.now(),
     });
     const result = await recomputeAllocation(ctx, need._id, {
       supersedeApproved: true,
@@ -183,10 +175,10 @@ export const applyPublicRecall = internalMutation({
       actor: "evidence-monitor",
       meta: JSON.stringify({ citationUrl: args.sourceUrl, invalidated: invalidated.map((o) => String(o.id)), nextCertStatus: "failed" }),
       incidentId: need.incidentId,
-      snapshot: JSON.stringify({
+      snapshot: buildDriftSnapshot({
         incident: { id: String(need.incidentId), title: incident.title },
         need: { id: String(need._id), item: need.item, qty: need.qty },
-        plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents },
+        plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: [] },
       }),
     });
     return {
@@ -205,28 +197,13 @@ export const addReplacementOffer = mutation({
     const { need, ownerId } = await requireNeedOwner(ctx, args.needId);
     const incident = await ctx.db.get(need.incidentId);
     if (!incident?.isDemo) throw new Error("Synthetic replacement stock is available only in the controlled demo");
-    const email = "rfq+delta@synthetic.reliefgrid.test";
-    let supplier = await ctx.db.query("suppliers").withIndex("by_owner_and_email", (q) => q.eq("ownerId", ownerId).eq("contactEmail", email)).unique();
-    if (!supplier) {
-      const id = await ctx.db.insert("suppliers", { name: "Delta Emergency Stock", contactEmail: email, region: "East", verified: true, ownerId, createdAt: Date.now() });
-      supplier = await ctx.db.get(id);
-    }
-    if (!supplier) throw new Error("Could not create replacement supplier");
-    const current = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).take(200);
-    const replacement = current.find((offer) => offer.supplierId === supplier!._id);
-    if (!replacement) {
-      const offerId = await ctx.db.insert("offers", {
-        needId: need._id, supplierId: supplier._id, qty: 70, unitPriceCents: 1200,
-        arrivalAt: Date.now() + 2 * 3600000, certStatus: "verified", conditions: [], confidence: 0.98,
-        rawEmailId: "demo-replacement", language: "en", status: "active", updatedAt: Date.now(),
-      });
-      await ctx.db.insert("sourceChecks", {
-        offerId, url: "https://example.com/demo/delta-nsf53", quote: "Replacement lot is not affected by bulletin",
-        retrievedAt: Date.now(), status: "verified", reason: "Labeled synthetic replacement fixture", type: "recall",
-      });
-      const replacementDoc = await ctx.db.get(offerId);
-      await offersByNeed.insert(ctx, replacementDoc!);
-    }
+    await ensureDeltaReplacement(ctx, {
+      needId: need._id,
+      ownerId,
+      rawEmailId: "demo-replacement",
+      quote: "Replacement lot is not affected by bulletin",
+      reason: "Labeled synthetic replacement fixture",
+    });
     const result = await recomputeAllocation(ctx, need._id, {
       supersedeApproved: true,
       allowEmpty: true,
@@ -235,7 +212,7 @@ export const addReplacementOffer = mutation({
     if (!result.planId) throw new Error("Evidence recheck produced no plan");
     await writeAudit(ctx, {
       entity: "incidents", entityId: need.incidentId, action: "replacement_plan_proposed", actor: "allocator", incidentId: need.incidentId,
-      snapshot: JSON.stringify({
+      snapshot: buildDriftSnapshot({
         incident: { id: String(need.incidentId), title: DEMO_TITLE },
         need: { id: String(need._id), item: need.item, qty: need.qty },
         offers: [

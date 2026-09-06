@@ -3,8 +3,8 @@ import { WorkflowManager, getStatus, sendEvent } from "@convex-dev/workflow";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { writeAudit } from "./lib/audit";
+import { ensureDeltaReplacement, failOffersWithFailedChecks, replaceHoldNotice } from "./lib/drift";
 import { requireNeedOwner } from "./model/auth";
-import { offersByNeed } from "./offerTotals";
 import { recomputeAllocation } from "./allocations";
 
 export const recoveryManager = new WorkflowManager(components.workflow);
@@ -30,16 +30,7 @@ export const invalidateFailedOffers = internalMutation({
   args: { needId: v.id("needs") },
   returns: v.object({ invalidated: v.number() }),
   handler: async (ctx, args) => {
-    const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", args.needId)).take(200);
-    let invalidated = 0;
-    for (const offer of offers) {
-      const checks = await ctx.db.query("sourceChecks").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).take(100);
-      if (checks.some((c) => c.status === "failed") && offer.certStatus !== "failed") {
-        await ctx.db.patch(offer._id, { certStatus: "failed", updatedAt: Date.now() });
-        invalidated++;
-      }
-    }
-    return { invalidated };
+    return { invalidated: await failOffersWithFailedChecks(ctx, args.needId) };
   },
 });
 
@@ -52,16 +43,12 @@ export const draftRecoveryNotice = internalMutation({
     const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", args.needId)).take(200);
     const failed = offers.find((o) => o.certStatus === "failed");
     if (!failed) throw new Error("No failed offer to hold");
-    const existing = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", args.needId)).take(100);
-    for (const notice of existing) await ctx.db.delete(notice._id);
-    const noticeId = await ctx.db.insert("holdNotices", {
+    const noticeId = await replaceHoldNotice(ctx, {
       needId: args.needId,
       offerId: failed._id,
-      status: "draft",
       subject: "HOLD: allocation pending evidence review (workflow)",
       body: "A source check failed for an allocated offer. The recovery workflow paused for human approval before replacement stock is ordered.",
       citationUrl: "/demo-bulletin",
-      createdAt: Date.now(),
     });
     return { noticeId };
   },
@@ -75,29 +62,14 @@ export const createReplacement = internalMutation({
     if (!need) throw new Error("Need not found");
     const incident = await ctx.db.get(need.incidentId);
     if (!incident?.ownerId || !incident.isDemo) throw new Error("Synthetic recovery is available only in the controlled demo");
-    const email = "rfq+delta@synthetic.reliefgrid.test";
-    let supplier = await ctx.db.query("suppliers").withIndex("by_owner_and_email", (q) => q.eq("ownerId", incident.ownerId).eq("contactEmail", email)).unique();
-    if (!supplier) {
-      const id = await ctx.db.insert("suppliers", {
-        name: "Delta Emergency Stock", contactEmail: email, region: "East", verified: true, ownerId: incident.ownerId, createdAt: Date.now(),
-      });
-      supplier = await ctx.db.get(id);
-    }
-    if (!supplier) throw new Error("Could not create replacement supplier");
-    const current = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", args.needId)).take(200);
-    if (current.some((offer) => offer.supplierId === supplier!._id)) return { created: false };
-    const offerId = await ctx.db.insert("offers", {
-      needId: args.needId, supplierId: supplier._id, qty: 70, unitPriceCents: 1200,
-      arrivalAt: Date.now() + 2 * 3600000, certStatus: "verified", conditions: [], confidence: 0.98,
-      rawEmailId: "workflow-replacement", language: "en", status: "active", updatedAt: Date.now(),
+    const { created } = await ensureDeltaReplacement(ctx, {
+      needId: args.needId,
+      ownerId: incident.ownerId,
+      rawEmailId: "workflow-replacement",
+      quote: "Replacement lot verified by workflow",
+      reason: "Workflow replacement fixture",
     });
-    await ctx.db.insert("sourceChecks", {
-      offerId, url: "https://example.com/demo/delta-nsf53", quote: "Replacement lot verified by workflow",
-      retrievedAt: Date.now(), status: "verified", reason: "Workflow replacement fixture", type: "recall",
-    });
-    const offer = await ctx.db.get(offerId);
-    await offersByNeed.insert(ctx, offer!);
-    return { created: true };
+    return { created };
   },
 });
 

@@ -1,10 +1,10 @@
 import { v } from "convex/values";
 import { internalMutation, mutation, type MutationCtx } from "./_generated/server";
-import { allocateOffers } from "./lib/allocate";
 import { writeAudit } from "./lib/audit";
+import { buildDriftSnapshot } from "./lib/drift";
 import { offersByNeed } from "./offerTotals";
 import { requireOwnerId } from "./model/auth";
-import { allocationInputHash } from "./lib/allocationHash";
+import { recomputeAllocation } from "./allocations";
 import { cancel, getStatus } from "@convex-dev/workflow";
 import { components } from "./_generated/api";
 
@@ -25,6 +25,75 @@ async function deleteAudit(ctx: MutationCtx, entity: string, entityId: string) {
   for (const event of events) await ctx.db.delete(event._id);
 }
 
+// Every need-scoped table the purge must empty, next to the deleter it
+// drives — not scattered across hand-written loops. A schema addition that
+// introduces a need/plan/offer-scoped table is one row here, or reset
+// orphans the new table's rows. Keep beside convex/schema.ts.
+type CascadeChild = {
+  table:
+    | "allocationPlans"
+    | "allocationLines"
+    | "approvals"
+    | "awardNotices"
+    | "offers"
+    | "sourceChecks"
+    | "evidenceAttachments"
+    | "offerVersions"
+    | "rfqThreads"
+    | "inboxes"
+    | "inboxClaims"
+    | "deliveries"
+    | "holdNotices"
+    | "recoveryRuns";
+  index: "by_need" | "by_plan" | "by_offer";
+  parentKey: "needId" | "planId" | "offerId";
+  limit: number;
+  auditEntity?: string;
+  deleteBlobs?: boolean;
+  aggregate?: boolean;
+  cancelWorkflow?: boolean;
+};
+
+async function scopedDocs(ctx: MutationCtx, table: CascadeChild["table"], index: CascadeChild["index"], key: CascadeChild["parentKey"], parentId: any, limit: number) {
+  const rows: any[] = await (ctx.db.query as any)(table).withIndex(index, (q: any) => q.eq(key, parentId)).take(limit);
+  return rows;
+}
+
+async function deleteScopedChildren(ctx: MutationCtx, spec: CascadeChild, parentId: any) {
+  for (const row of await scopedDocs(ctx, spec.table, spec.index, spec.parentKey, parentId, spec.limit)) {
+    if (spec.auditEntity) await deleteAudit(ctx, spec.auditEntity, String(row._id));
+    if (spec.deleteBlobs) await ctx.storage.delete(row.storageId);
+    if (spec.aggregate) await offersByNeed.deleteIfExists(ctx, row);
+    if (spec.cancelWorkflow) {
+      const status = await getStatus(ctx, components.workflow, row.workflowId as any);
+      if (status.type === "inProgress") await cancel(ctx, components.workflow, row.workflowId as any);
+    }
+    await ctx.db.delete(row._id);
+  }
+}
+
+const PLAN_CHILDREN: CascadeChild[] = [
+  { table: "awardNotices", index: "by_plan", parentKey: "planId", limit: 100 },
+  { table: "allocationLines", index: "by_plan", parentKey: "planId", limit: 200 },
+  { table: "approvals", index: "by_plan", parentKey: "planId", limit: 10 },
+];
+
+const OFFER_CHILDREN: CascadeChild[] = [
+  { table: "sourceChecks", index: "by_offer", parentKey: "offerId", limit: 100 },
+  { table: "evidenceAttachments", index: "by_offer", parentKey: "offerId", limit: 20, deleteBlobs: true },
+  { table: "offerVersions", index: "by_offer", parentKey: "offerId", limit: 500 },
+];
+
+const NEED_CHILDREN: CascadeChild[] = [
+  { table: "rfqThreads", index: "by_need", parentKey: "needId", limit: 100, auditEntity: "rfqThreads" },
+  { table: "inboxes", index: "by_need", parentKey: "needId", limit: 5 },
+  { table: "inboxClaims", index: "by_need", parentKey: "needId", limit: 2 },
+  { table: "deliveries", index: "by_need", parentKey: "needId", limit: 100 },
+  { table: "holdNotices", index: "by_need", parentKey: "needId", limit: 100 },
+  { table: "recoveryRuns", index: "by_need", parentKey: "needId", limit: 20, cancelWorkflow: true },
+  { table: "offerVersions", index: "by_need", parentKey: "needId", limit: 500 },
+];
+
 async function deleteDemoIncident(ctx: MutationCtx, incidentId: any) {
   const needs = await ctx.db
     .query("needs")
@@ -32,55 +101,20 @@ async function deleteDemoIncident(ctx: MutationCtx, incidentId: any) {
     .take(10);
 
   for (const need of needs) {
-    const plans = await ctx.db.query("allocationPlans").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
-    for (const plan of plans) {
-      const notices = await ctx.db.query("awardNotices").withIndex("by_plan", (q) => q.eq("planId", plan._id)).take(100);
-      for (const notice of notices) await ctx.db.delete(notice._id);
-      const lines = await ctx.db.query("allocationLines").withIndex("by_plan", (q) => q.eq("planId", plan._id)).take(200);
-      for (const line of lines) await ctx.db.delete(line._id);
-      const approvals = await ctx.db.query("approvals").withIndex("by_plan", (q) => q.eq("planId", plan._id)).take(10);
-      for (const approval of approvals) await ctx.db.delete(approval._id);
+    for (const plan of await scopedDocs(ctx, "allocationPlans", "by_need", "needId", need._id, 100)) {
+      for (const spec of PLAN_CHILDREN) await deleteScopedChildren(ctx, spec, plan._id);
       await deleteAudit(ctx, "allocationPlans", String(plan._id));
       await ctx.db.delete(plan._id);
     }
 
-    const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).take(200);
-    for (const offer of offers) {
-      const checks = await ctx.db.query("sourceChecks").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).take(100);
-      for (const check of checks) await ctx.db.delete(check._id);
-      const attachments = await ctx.db.query("evidenceAttachments").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).take(20);
-      for (const attachment of attachments) {
-        await ctx.storage.delete(attachment.storageId);
-        await ctx.db.delete(attachment._id);
-      }
-      const versions = await ctx.db.query("offerVersions").withIndex("by_offer", (q) => q.eq("offerId", offer._id)).take(500);
-      for (const version of versions) await ctx.db.delete(version._id);
+    for (const offer of await scopedDocs(ctx, "offers", "by_need", "needId", need._id, 200)) {
+      for (const spec of OFFER_CHILDREN) await deleteScopedChildren(ctx, spec, offer._id);
       await deleteAudit(ctx, "offers", String(offer._id));
       await offersByNeed.deleteIfExists(ctx, offer);
       await ctx.db.delete(offer._id);
     }
 
-    const threads = await ctx.db.query("rfqThreads").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
-    for (const thread of threads) {
-      await deleteAudit(ctx, "rfqThreads", String(thread._id));
-      await ctx.db.delete(thread._id);
-    }
-    const inboxes = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", need._id)).take(5);
-    for (const inbox of inboxes) await ctx.db.delete(inbox._id);
-    const inboxClaims = await ctx.db.query("inboxClaims").withIndex("by_need", (q) => q.eq("needId", need._id)).take(2);
-    for (const claim of inboxClaims) await ctx.db.delete(claim._id);
-    const deliveries = await ctx.db.query("deliveries").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
-    for (const delivery of deliveries) await ctx.db.delete(delivery._id);
-    const holdNotices = await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", need._id)).take(100);
-    for (const notice of holdNotices) await ctx.db.delete(notice._id);
-    const recoveryRuns = await ctx.db.query("recoveryRuns").withIndex("by_need", (q) => q.eq("needId", need._id)).take(20);
-    for (const run of recoveryRuns) {
-      const status = await getStatus(ctx, components.workflow, run.workflowId as any);
-      if (status.type === "inProgress") await cancel(ctx, components.workflow, run.workflowId as any);
-      await ctx.db.delete(run._id);
-    }
-    const orphanVersions = await ctx.db.query("offerVersions").withIndex("by_need", (q) => q.eq("needId", need._id)).take(500);
-    for (const version of orphanVersions) await ctx.db.delete(version._id);
+    for (const spec of NEED_CHILDREN) await deleteScopedChildren(ctx, spec, need._id);
     await deleteAudit(ctx, "needs", String(need._id));
     await ctx.db.delete(need._id);
   }
@@ -138,7 +172,7 @@ export async function resetDemoData(ctx: MutationCtx) {
     { qty: 30, unitPriceCents: 1000, arrivalAt: now + 3 * 3600000, language: "es", confidence: 0.96, body: "Podemos entregar 30 unidades certificadas a $10 cada una antes de las 5 PM." },
   ] as const;
 
-  const offers = [];
+  const offers: Array<{ supplierName: string; qty: number }> = [];
   for (let index = 0; index < supplierIds.length; index++) {
     const supplierId = supplierIds[index];
     const fixture = offerFixtures[index];
@@ -165,25 +199,18 @@ export async function resetDemoData(ctx: MutationCtx) {
       offerId, url: "https://example.com/demo/filter-nsf53", quote: "NSF/ANSI 53 certification confirmed",
       retrievedAt: now, status: "verified", reason: "Labeled synthetic verification fixture", type: "cert",
     });
-    offers.push({ offerId, supplierId, supplierName: supplierFixtures[index].name, ...fixture, certStatus: "verified" });
+    offers.push({ supplierName: supplierFixtures[index].name, qty: fixture.qty });
   }
 
-  const result = allocateOffers(offers, {
-    qty: 100, budgetCents: 120000, deadlineAt: now + 4 * 3600000,
-    certRequired: "NSF/ANSI 53", partialAllowed: true,
+  // The fixture plan is minted through the same transactional recompute as
+  // live plans, so its hash, reasons, and audits can never desynchronize.
+  const result = await recomputeAllocation(ctx, needId, {
+    supersedeApproved: false,
+    allowEmpty: true,
+    lineReason: "selected: cheapest feasible covering",
   });
-  const planId = await ctx.db.insert("allocationPlans", {
-    needId, status: "proposed", totalCostCents: result.totalCostCents,
-    totalQty: result.totalQty, createdAt: now, decisionTrace: result.trace,
-    inputHash: allocationInputHash({ qty: 100, budgetCents: 120000, deadlineAt: now + 4 * 3600000, certRequired: "NSF/ANSI 53", partialAllowed: true }, offers),
-  });
-  for (const selected of result.selected) {
-    await ctx.db.insert("allocationLines", {
-      planId, supplierId: selected.supplierId as any, offerId: selected.offerId as any,
-      qty: selected.qty, costCents: selected.qty * selected.unitPriceCents,
-      reason: "selected: cheapest feasible covering",
-    });
-  }
+  if (!result.planId) throw new Error("Demo fixture produced no plan");
+  const planId = result.planId;
 
   const bulletin = await ctx.db.query("demoBulletins").withIndex("by_owner_and_key", (q) => q.eq("ownerId", ownerId).eq("key", "filter-nsf53")).unique();
   const bulletinValue = { title: "Northstar Filter Model NF-53 Safety Bulletin", state: "CLEAR" as const, body: "No active safety notices for model NF-53.", updatedAt: now };
@@ -191,21 +218,22 @@ export async function resetDemoData(ctx: MutationCtx) {
   else await ctx.db.insert("demoBulletins", { key: "filter-nsf53", ownerId, ...bulletinValue });
 
   const snapshotBase = { incident: { id: String(incidentId), title: DEMO_TITLE }, need: { id: String(needId), item: "Portable water filters (NSF/ANSI 53)", qty: 100 } };
+  const snapshotOffers = (certStatus: string) => offers.map((offer) => ({ supplier: offer.supplierName, qty: offer.qty, certStatus }));
   await writeAudit(ctx, {
     entity: "incidents", entityId: incidentId, action: "demo_need_created", actor: "judge-mode", incidentId,
-    snapshot: JSON.stringify({ ...snapshotBase, offers: [], plan: null }),
+    snapshot: buildDriftSnapshot({ ...snapshotBase, offers: [], plan: null }),
   });
   await writeAudit(ctx, {
     entity: "incidents", entityId: incidentId, action: "demo_replies_received", actor: "judge-mode", incidentId,
-    snapshot: JSON.stringify({ ...snapshotBase, offers: offers.map((offer) => ({ supplier: offer.supplierName, qty: offer.qty, certStatus: "needs_review" })), plan: null }),
+    snapshot: buildDriftSnapshot({ ...snapshotBase, offers: snapshotOffers("needs_review"), plan: null }),
   });
   await writeAudit(ctx, {
     entity: "incidents", entityId: incidentId, action: "demo_sources_verified", actor: "judge-mode", incidentId,
-    snapshot: JSON.stringify({ ...snapshotBase, offers: offers.map((offer) => ({ supplier: offer.supplierName, qty: offer.qty, certStatus: "verified" })), plan: null }),
+    snapshot: buildDriftSnapshot({ ...snapshotBase, offers: snapshotOffers("verified"), plan: null }),
   });
   await writeAudit(ctx, {
     entity: "incidents", entityId: incidentId, action: "demo_plan_proposed", actor: "allocator", incidentId,
-    snapshot: JSON.stringify({ ...snapshotBase, offers: offers.map((offer) => ({ supplier: offer.supplierName, qty: offer.qty, certStatus: "verified" })), plan: { id: String(planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: result.selected.map((offer) => offer.supplierName) } }),
+    snapshot: buildDriftSnapshot({ ...snapshotBase, offers: snapshotOffers("verified"), plan: { id: String(planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: result.selected.map((offer) => offer.supplierName) } }),
   });
 
   return { incidentId, needId, planId };
