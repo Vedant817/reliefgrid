@@ -187,6 +187,71 @@ export const listAllocationPlans = query({
     return enriched;
   },
 });
+// Server-side basket rollup: per-need coverage plus incident totals, so the
+// client never computes coverage itself. coveredQty/plannedCostCents come
+// from each need's LATEST plan (by_need, order desc, first); a need with no
+// plan contributes zeros.
+export const getBasketCoverage = query({
+  args: { incidentId: v.id("incidents") },
+  returns: v.object({
+    needs: v.array(
+      v.object({
+        needId: v.id("needs"),
+        item: v.string(),
+        qty: v.number(),
+        coveredQty: v.number(),
+        plannedCostCents: v.number(),
+        status: v.string(),
+      }),
+    ),
+    totals: v.object({
+      needs: v.number(),
+      fullyCovered: v.number(),
+      totalQty: v.number(),
+      totalNeedQty: v.number(),
+      totalCostCents: v.number(),
+    }),
+  }),
+  handler: async (ctx, args) => {
+    await requireIncidentOwner(ctx, args.incidentId);
+    const needs = await ctx.db
+      .query("needs")
+      .withIndex("by_incident", (q) => q.eq("incidentId", args.incidentId))
+      .take(100);
+    const entries = await Promise.all(
+      needs.map(async (need) => {
+        const plan = await ctx.db
+          .query("allocationPlans")
+          .withIndex("by_need", (q) => q.eq("needId", need._id))
+          .order("desc")
+          .first();
+        return {
+          needId: need._id,
+          item: need.item,
+          qty: need.qty,
+          coveredQty: plan?.totalQty ?? 0,
+          plannedCostCents: plan?.totalCostCents ?? 0,
+          status: plan?.status ?? "none",
+        };
+      }),
+    );
+    const fullyCovered = entries.filter((e) => e.coveredQty >= e.qty).length;
+    const totalQty = entries.reduce((sum, e) => sum + e.coveredQty, 0);
+    const totalNeedQty = entries.reduce((sum, e) => sum + e.qty, 0);
+    const totalCostCents = entries.reduce((sum, e) => sum + e.plannedCostCents, 0);
+    return {
+      needs: entries,
+      totals: {
+        needs: entries.length,
+        fullyCovered,
+        totalQty,
+        totalNeedQty,
+        totalCostCents,
+      },
+    };
+  },
+});
+
 // Basket view: the latest plan totals for every need in an incident, so a
 // multi-item request can be summarized as "x of y items covered".
 export const listPlansByIncident = query({

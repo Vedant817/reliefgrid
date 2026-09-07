@@ -37,6 +37,88 @@ export function buildRfqEmail(need: { item: string; qty: number; deadlineAt: num
   return { subject, text };
 }
 
+export type AgentMailAttachmentMeta = {
+  attachmentId: string;
+  size: number;
+  downloadUrl: string;
+  expiresAt: string;
+  filename?: string;
+  contentType?: string;
+};
+
+// Resolve the short-lived download URL for one attachment.
+// GET /v0/inboxes/{inbox_id}/messages/{message_id}/attachments/{attachment_id}
+// → { attachment_id, size, download_url, expires_at, filename?, content_type? }
+// Throws with the HTTP status only; keys and addresses are never logged here.
+export async function getAgentMailAttachmentMeta(
+  config: AgentMailConfig,
+  inboxId: string,
+  messageId: string,
+  attachmentId: string,
+  timeoutMs = 15000,
+): Promise<AgentMailAttachmentMeta> {
+  if (!config.apiKey) throw new Error("no AgentMail key configured");
+  const res = await fetch(
+    `https://api.agentmail.to/v0/inboxes/${encodeURIComponent(inboxId)}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}`,
+    {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+      signal: AbortSignal.timeout(timeoutMs),
+    },
+  );
+  if (!res.ok) {
+    const detail = (await res.text()).replace(/\s+/g, " ").slice(0, 200);
+    throw new Error(`AgentMail attachment HTTP ${res.status}${detail ? `: ${detail}` : ""}`);
+  }
+  const body = (await res.json()) as {
+    download_url?: unknown;
+    size?: unknown;
+    expires_at?: unknown;
+    filename?: unknown;
+    content_type?: unknown;
+  };
+  if (typeof body.download_url !== "string" || !body.download_url) {
+    throw new Error("AgentMail attachment missing download_url");
+  }
+  return {
+    attachmentId,
+    size: typeof body.size === "number" ? body.size : 0,
+    downloadUrl: body.download_url,
+    expiresAt: typeof body.expires_at === "string" ? body.expires_at : "",
+    filename: typeof body.filename === "string" ? body.filename : undefined,
+    contentType: typeof body.content_type === "string" ? body.content_type : undefined,
+  };
+}
+
+// Fetch raw bytes from a presigned `download_url`. No Authorization header:
+// the URL itself is the capability, and the API key must not leak to the
+// storage host. Rejects files over `maxBytes` (default 10MB).
+export async function downloadAgentMailAttachmentBytes(
+  downloadUrl: string,
+  timeoutMs = 15000,
+  maxBytes = 10 * 1024 * 1024,
+): Promise<ArrayBuffer> {
+  const res = await fetch(downloadUrl, { signal: AbortSignal.timeout(timeoutMs) });
+  if (!res.ok) throw new Error(`Attachment download HTTP ${res.status}`);
+  const buf = await res.arrayBuffer();
+  if (buf.byteLength > maxBytes) throw new Error(`attachment over ${maxBytes} bytes rejected`);
+  return buf;
+}
+
+// One call per PDF: metadata → presigned URL → bytes. Enforces the 10MB
+// bound on both the advertised size and the actual payload.
+export async function fetchPdfAttachmentBytes(
+  config: AgentMailConfig,
+  inboxId: string,
+  messageId: string,
+  attachmentId: string,
+  timeoutMs = 15000,
+): Promise<{ bytes: ArrayBuffer; filename?: string; contentType?: string; size: number }> {
+  const meta = await getAgentMailAttachmentMeta(config, inboxId, messageId, attachmentId, timeoutMs);
+  if (meta.size > 10 * 1024 * 1024) throw new Error("attachment over 10MB rejected");
+  const bytes = await downloadAgentMailAttachmentBytes(meta.downloadUrl, timeoutMs);
+  return { bytes, filename: meta.filename, contentType: meta.contentType, size: meta.size };
+}
+
 export async function createAgentMailInbox(
   config: AgentMailConfig,
   username: string,
