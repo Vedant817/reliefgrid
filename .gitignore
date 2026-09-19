@@ -39,3 +39,7 @@ yarn-error.log*
 .idea/
 *.swp
 *.swo
+.claude
+.agents.backup
+
+/e2e
