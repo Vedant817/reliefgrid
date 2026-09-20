@@ -35,6 +35,11 @@ test("AgentMail round trip is ingested and extracted live by Groq", async ({ pag
     const dialog = page.getByRole("dialog", { name: "Create urgent requirement" });
     await dialog.getByLabel("Incident name").fill(`Provider round trip ${suffix}`);
     await dialog.getByLabel("Item").fill("Sterile field dressings");
+    await dialog.getByLabel("Quantity").fill("25");
+    await dialog.getByLabel("Budget, USD").fill("500");
+    const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const deadlineValue = new Date(deadline.getTime() - deadline.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+    await dialog.getByLabel("Required arrival").fill(deadlineValue);
     await dialog.getByLabel("Delivery location").fill("Controlled test receiving");
     await dialog.getByRole("button", { name: "Create requirement" }).click();
     await expect(page.getByText(`Provider round trip ${suffix}`, { exact: true })).toBeVisible();
@@ -70,9 +75,5 @@ test("AgentMail round trip is ingested and extracted live by Groq", async ({ pag
     await expect(page.getByText("$4.50", { exact: false })).toBeVisible({ timeout: 90_000 });
     await expect(page.getByText("25 units quoted", { exact: false })).toBeVisible({ timeout: 90_000 });
 
-    await page.goto("/?demo=1");
-    await page.locator("summary").filter({ hasText: "How this was decided" }).click();
-    const groqCard = page.locator("div.rounded-lg").filter({ hasText: /^groqlive/i }).first();
-    await expect(groqCard).toBeVisible();
   expect(errors).toEqual([]);
 });

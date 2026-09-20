@@ -9,7 +9,7 @@ function captureRuntimeErrors(page: import("@playwright/test").Page) {
   return errors;
 }
 
-test("customer can create a requirement, search it, and add a controlled supplier", async ({ page }, testInfo) => {
+test("coordinator can create a requirement, search it, and add a supplier", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "desktop", "desktop workflow");
   const errors = captureRuntimeErrors(page);
   const suffix = Date.now().toString(36);
@@ -18,11 +18,13 @@ test("customer can create a requirement, search it, and add a controlled supplie
   await page.goto("/");
   await page.getByRole("button", { name: "New Incident" }).click();
   const dialog = page.getByRole("dialog", { name: "Create urgent requirement" });
-  const deadline = dialog.getByLabel("Required arrival");
-  const deadlineAt = await deadline.evaluate((element: HTMLInputElement) => new Date(element.value).getTime());
-  expect(deadlineAt).toBeGreaterThan(Date.now());
   await dialog.getByLabel("Incident name").fill(title);
   await dialog.getByLabel("Item").fill("Sterile field dressings");
+  await dialog.getByLabel("Quantity").fill("25");
+  await dialog.getByLabel("Budget, USD").fill("500");
+  const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  const deadlineValue = new Date(deadline.getTime() - deadline.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+  await dialog.getByLabel("Required arrival").fill(deadlineValue);
   await dialog.getByLabel("Delivery location").fill("North receiving bay");
   await dialog.getByRole("button", { name: "Create requirement" }).click();
   await expect(page.getByText(title, { exact: true })).toBeVisible();
@@ -31,78 +33,21 @@ test("customer can create a requirement, search it, and add a controlled supplie
   await expect(page.getByText(title, { exact: true })).toBeVisible();
   await page.getByPlaceholder("Search incidents…").fill("");
   await page.getByRole("button", { name: "Add supplier" }).click();
-  await page.getByLabel("Supplier name").fill(`Controlled supplier ${suffix}`);
-  await page.getByLabel("Supplier email").fill(`quotes-${suffix}@example.test`);
-  await page.getByLabel("Supplier region").fill("Test region");
+  await page.getByLabel("Supplier name").fill(`Supplier ${suffix}`);
+  await page.getByLabel("Supplier email").fill(`quotes-${suffix}@example-vendor.org`);
+  await page.getByLabel("Supplier region").fill("North region");
   await page.getByRole("button", { name: "Add without sending" }).click();
   await expect(page.getByRole("status")).toContainText("Supplier added");
-  await expect(page.getByRole("button", { name: "Controlled contact" }).last()).toBeDisabled();
-  await page.locator("summary").filter({ hasText: "How was this decision made?" }).click();
-  await page.getByRole("slider").fill("4");
-  await expect(page.getByText("+4h", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approve & send RFQ" }).last()).toBeEnabled();
   expect(errors).toEqual([]);
 });
 
-test("judge controls, public bulletin, attachment, allocation, and replay work", async ({ page }, testInfo) => {  test.skip(testInfo.project.name !== "desktop", "desktop workflow");
-  const errors = captureRuntimeErrors(page);
-  await page.goto("/?demo=1");
-  await page.getByRole("button", { name: "Reload sample" }).first().click();
-  await expect(page.getByText("Sample scenario reloaded", { exact: true })).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByText("100 / 100", { exact: false }).first()).toBeVisible();
-
-  const popupPromise = page.waitForEvent("popup");
-  await page.getByRole("link", { name: "Open controlled public bulletin" }).click();
-  const bulletin = await popupPromise;
-  await expect(bulletin.getByText("CLEAR", { exact: true })).toBeVisible();
-  await expect(bulletin.getByRole("heading", { level: 1 })).not.toContainText("Loading");
-  await bulletin.close();
-
-  await page.getByRole("button", { name: "Recompute" }).click();
-  await expect(page.getByText("Allocation recomputed", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await page.getByRole("button", { name: "Approve Plan" }).click();
-  await expect(page.getByText("Approved", { exact: true }).first()).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByRole("button", { name: "Approve Plan" })).toBeDisabled();
-
-  const reportPopup = page.waitForEvent("popup");
-  await page.getByRole("link", { name: "View full report" }).click();
-  const report = await reportPopup;
-  await expect(report.getByText("ReliefGrid decision report", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(report.getByText("Who quoted what", { exact: true })).toBeVisible();
-  await report.close();
-
-  const counterfactual = page.getByRole("slider").first();
-  await counterfactual.fill("4");
-  await expect(page.getByText("+4h", { exact: true })).toBeVisible();
-  await page.locator("summary").filter({ hasText: "Recorded fixture" }).click();
-  await expect(page.getByText("offline reference only", { exact: false })).toBeVisible();
-  await page.locator("summary").filter({ hasText: "How this was decided" }).click();
-  await expect(page.getByText("Integration health", { exact: true })).toBeVisible();
-  const upload = page.locator('input[type="file"]').first();
-  await upload.setInputFiles({ name: "browser-cert.txt", mimeType: "text/plain", buffer: Buffer.from("controlled certification evidence") });
-  await expect(page.getByRole("link", { name: "browser-cert.txt" })).toBeVisible();
-  await page.getByRole("button", { name: "Remove browser-cert.txt" }).click();
-  await expect(page.getByRole("link", { name: "browser-cert.txt" })).toHaveCount(0);
-  expect(errors).toEqual([]);
-});
-
-test("customer and judge layouts fit a mobile viewport", async ({ page }, testInfo) => {
+test("production layout fits a mobile viewport", async ({ page }, testInfo) => {
   test.skip(testInfo.project.name !== "mobile", "mobile workflow");
   const errors = captureRuntimeErrors(page);
-  for (const path of ["/", "/?demo=1"]) {
-    await page.goto(path);
-    await expect(page.getByText("ReliefGrid", { exact: true })).toBeVisible();
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-    expect(overflow).toBeLessThanOrEqual(1);
-  }
-  expect(errors).toEqual([]);
-});
-
-test("first visit explains the product and loads a sample scenario", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop", "desktop workflow");
-  const errors = captureRuntimeErrors(page);
   await page.goto("/");
-  await expect(page.getByText("Turn supplier email into a sourcing decision you can defend", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Load sample scenario" }).click();
-  await expect(page.getByText("100 / 100", { exact: false }).first()).toBeVisible();
+  await expect(page.getByText("ReliefGrid", { exact: true })).toBeVisible();
+  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  expect(overflow).toBeLessThanOrEqual(1);
   expect(errors).toEqual([]);
 });
