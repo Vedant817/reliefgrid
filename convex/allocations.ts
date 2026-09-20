@@ -325,7 +325,7 @@ export const approvePlan = mutation({
     if (plan.totalQty <= 0) throw new Error("Cannot approve a plan covering zero units");
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Authentication required");
-    const approver = (identity.name ?? identity.tokenIdentifier).trim();
+    const approver = (identity.name ?? identity.email ?? identity.tokenIdentifier).trim();
     if (approver.length < 2) throw new Error("approvedBy must identify the approver");
     const need = await ctx.db.get(plan.needId);
     if (!need) throw new Error("Need not found");

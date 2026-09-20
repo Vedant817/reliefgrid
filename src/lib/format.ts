@@ -55,10 +55,11 @@ export function friendlyReason(reason: string) {
   return reason;
 }
 
-// Anonymous Convex sessions identify as opaque token strings; summary
-// surfaces show a human role instead of leaking identity internals.
+// Opaque token identifiers stay hidden; emails and names from Convex Auth
+// are shown as the human approver.
 export function displayApprover(approvedBy?: string | null) {
   if (!approvedBy) return "Pending approval";
+  if (approvedBy.includes("@")) return approvedBy;
   if (approvedBy.includes("|")) return "Workspace coordinator";
   return approvedBy;
 }
