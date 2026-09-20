@@ -3,7 +3,7 @@
 import { v } from "convex/values";
 import { internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { normalizeMailbox, replyAgentMailMessage, resolveAgentMail, sendAgentMailMessage } from "../lib/agentmail";
+import { replyAgentMailMessage, resolveAgentMail, sendAgentMailMessage } from "../lib/agentmail";
 import { guardedProviderSend, IDEMPOTENCY_WINDOW_MS } from "../lib/sendGuard";
 import { recordRun } from "../lib/runs";
 
@@ -26,13 +26,10 @@ export const sendAwardNotices = internalAction({
     for (const row of dispatch.threads) {
       if (!row.supplier) continue;
       const kind = row.allocatedQty > 0 ? "award" as const : "decline" as const;
-      const contactDomain = normalizeMailbox(row.supplier.contactEmail)?.split("@")[1];
-      const demo = dispatch.isDemo || contactDomain === "synthetic.reliefgrid.test";
       const claim = await ctx.runMutation(internal.awardNotices.claimNotice, {
         planId: args.planId,
         threadId: row.thread._id,
         kind,
-        demo,
       });
       const dispatchKey = `award-${String(args.planId)}-${String(row.thread._id)}-${kind}`;
       if (claim.shouldReconcile && claim.sendClaimedAt && Date.now() - claim.sendClaimedAt >= IDEMPOTENCY_WINDOW_MS) {

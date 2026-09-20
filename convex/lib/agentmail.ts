@@ -32,7 +32,6 @@ export function buildRfqEmail(need: { item: string; qty: number; deadlineAt: num
     need.certRequired ? `Certification required: ${need.certRequired}.` : ``,
     ``,
     `Reply with quantity, unit price, delivery time, and certification status.`,
-    `This is a controlled demo RFQ; do not dispatch goods.`,
   ].join("\n");
   return { subject, text };
 }

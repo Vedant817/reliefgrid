@@ -27,7 +27,6 @@ export default defineSchema({
     updatedAt: v.number(),
     description: v.optional(v.string()),
     ownerId: v.optional(v.string()),
-    isDemo: v.optional(v.boolean()),
   })
     .index("by_status", ["status"])
     .index("by_deadline", ["deadlineAt"])
@@ -192,7 +191,7 @@ export default defineSchema({
     planId: v.id("allocationPlans"),
     threadId: v.id("rfqThreads"),
     kind: v.union(v.literal("award"), v.literal("decline")),
-    status: v.union(v.literal("sending"), v.literal("sent"), v.literal("failed"), v.literal("skipped_demo")),
+    status: v.union(v.literal("sending"), v.literal("sent"), v.literal("failed")),
     messageId: v.optional(v.string()),
     error: v.optional(v.string()),
     updatedAt: v.number(),
@@ -250,7 +249,6 @@ export default defineSchema({
     operation: v.string(), // e.g. extract, scrape, send_rfq, webhook
     status: v.union(
       v.literal("live"),
-      v.literal("mock"),
       v.literal("degraded"),
       v.literal("not_configured"),
       v.literal("failed"),
@@ -265,22 +263,10 @@ export default defineSchema({
     .index("by_at", ["at"])
     .index("by_owner_and_at", ["ownerId", "at"]),
 
-  // Controlled demo bulletin for Evidence Drift (11.2) — public, synthetic
-  demoBulletins: defineTable({
-    key: v.string(),
-    title: v.string(),
-    state: v.union(v.literal("CLEAR"), v.literal("RECALL_ACTIVE")),
-    body: v.string(),
-    updatedAt: v.number(),
-    ownerId: v.optional(v.string()),
-  })
-    .index("by_key", ["key"])
-    .index("by_owner_and_key", ["ownerId", "key"]),
-
   holdNotices: defineTable({
     needId: v.id("needs"),
     offerId: v.id("offers"),
-    status: v.union(v.literal("draft"), v.literal("sending"), v.literal("approved"), v.literal("sent"), v.literal("sent_fixture")),
+    status: v.union(v.literal("draft"), v.literal("sending"), v.literal("approved"), v.literal("sent")),
     subject: v.string(),
     body: v.string(),
     citationUrl: v.string(),
@@ -290,15 +276,6 @@ export default defineSchema({
     dispatchKey: v.optional(v.string()),
     sendClaimedAt: v.optional(v.number()),
   }).index("by_need", ["needId"]),
-
-  recoveryRuns: defineTable({
-    workflowId: v.string(),
-    needId: v.id("needs"),
-    startedBy: v.string(),
-    startedAt: v.number(),
-  })
-    .index("by_workflow", ["workflowId"])
-    .index("by_need", ["needId"]),
 
   // Retained for previously persisted assistant threads. No public API exposes it.
   coordinatorThreads: defineTable({

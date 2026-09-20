@@ -18,7 +18,6 @@ export const getDispatch = internalQuery({
     return {
       need,
       ownerId: incident.ownerId ?? null,
-      isDemo: incident.isDemo === true,
       inbox,
       threads: await Promise.all(threads.map(async (thread) => ({
         thread,
@@ -34,7 +33,6 @@ export const claimNotice = internalMutation({
     planId: v.id("allocationPlans"),
     threadId: v.id("rfqThreads"),
     kind: v.union(v.literal("award"), v.literal("decline")),
-    demo: v.boolean(),
   },
   returns: v.object({ noticeId: v.id("awardNotices"), shouldSend: v.boolean(), shouldReconcile: v.boolean(), sendClaimedAt: v.optional(v.number()) }),
   handler: async (ctx, args) => {
@@ -48,19 +46,19 @@ export const claimNotice = internalMutation({
     if (existing && existing.status !== "failed") return { noticeId: existing._id, shouldSend: false, shouldReconcile: false, sendClaimedAt: existing.sendClaimedAt };
     if (existing) {
       const sendClaimedAt = Date.now();
-      await ctx.db.patch(existing._id, { status: args.demo ? "skipped_demo" : "sending", error: undefined, updatedAt: sendClaimedAt, sendClaimedAt });
-      return { noticeId: existing._id, shouldSend: !args.demo, shouldReconcile: false, sendClaimedAt };
+      await ctx.db.patch(existing._id, { status: "sending", error: undefined, updatedAt: sendClaimedAt, sendClaimedAt });
+      return { noticeId: existing._id, shouldSend: true, shouldReconcile: false, sendClaimedAt };
     }
     const sendClaimedAt = Date.now();
     const noticeId = await ctx.db.insert("awardNotices", {
       planId: args.planId,
       threadId: args.threadId,
       kind: args.kind,
-      status: args.demo ? "skipped_demo" : "sending",
+      status: "sending",
       updatedAt: sendClaimedAt,
       sendClaimedAt,
     });
-    return { noticeId, shouldSend: !args.demo, shouldReconcile: false, sendClaimedAt };
+    return { noticeId, shouldSend: true, shouldReconcile: false, sendClaimedAt };
   },
 });
 

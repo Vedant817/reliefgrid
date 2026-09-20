@@ -21,7 +21,7 @@ function evidenceSpan(match: RegExpMatchArray | null, confidence: number) {
 }
 
 // Live-only LLM extraction (Groq preferred, OpenAI supported). There is no
-// mock lane: missing keys or provider failures throw after recording a failed
+// fallback lane: missing keys or provider failures throw after recording a failed
 // run. Genuinely ambiguous emails still yield qty 0 / needs_review so the
 // allocator abstains and the clarification flow takes over.
 export const extractOfferFromEmail = internalAction({
@@ -42,7 +42,7 @@ export const extractOfferFromEmail = internalAction({
     const startedAt = Date.now();
     const text = args.rawBody.toLowerCase();
     const llm = resolveLlmProvider();
-    if (llm.kind === "mock") throw new Error("no LLM key configured (GROQ_API_KEY or OPENAI_API_KEY)");
+    if (llm.kind === "unconfigured") throw new Error("no LLM key configured (GROQ_API_KEY or OPENAI_API_KEY)");
 
     let parsed: ExtractedOffer;
     let requestId: string;

@@ -2,7 +2,7 @@ import { RateLimiter, HOUR } from "@convex-dev/rate-limiter";
 import { components } from "./_generated/api";
 
 // Cost guardrail for every billable provider lane. Generous on purpose for
-// judge demos; tight enough that a loop bug or spammy supplier cannot drain
+// interactive use; tight enough that a loop bug or spammy supplier cannot drain
 // Firecrawl/Groq balances overnight. Keyed per need/offer so one hot need
 // never starves the rest.
 export const providerLimits = new RateLimiter(components.rateLimiter, {

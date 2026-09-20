@@ -12,8 +12,8 @@ describe("resolveLlmProvider", () => {
     expect(config.baseUrl).toBe("https://api.openai.com/v1");
   });
 
-  it("falls back to mock with no keys", () => {
-    expect(resolveLlmProvider({}).kind).toBe("mock");
+  it("reports an unconfigured provider with no keys", () => {
+    expect(resolveLlmProvider({}).kind).toBe("unconfigured");
   });
 });
 
@@ -39,7 +39,7 @@ describe("parseExtractionJson", () => {
     expect(parsed?.confidence).toBe(1);
   });
 
-  it("returns null for unparseable output so callers use the mock", () => {
+  it("returns null for unparseable output so callers reject it", () => {
     expect(parseExtractionJson("sorry, I cannot do that")).toBeNull();
   });
 

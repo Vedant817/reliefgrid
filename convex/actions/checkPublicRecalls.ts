@@ -18,7 +18,7 @@ import type { Id } from "../_generated/dataModel";
 // Real-world evidence drift: Firecrawl searches public recall sources for
 // the need's exact product identifiers and, when an authoritative page
 // confirms a matching recall, freezes every affected offer through the same
-// transactional path as the controlled demo (failed source check, draft
+// transactional evidence path (failed source check, draft
 // hold notice, recompute, audit). No match means no writes at all.
 export const checkPublicRecalls = action({
   args: { needId: v.id("needs") },

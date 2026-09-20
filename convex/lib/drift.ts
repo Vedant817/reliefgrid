@@ -1,17 +1,7 @@
 import type { MutationCtx } from "../_generated/server";
 import type { Id } from "../_generated/dataModel";
-import { offersByNeed } from "../offerTotals";
 
-// Shared invalidation writer behind every evidence-drift path (controlled
-// recall, public recall, guided recovery, demo fixtures). One place owns
-// the sweep, the hold-notice churn, the synthetic replacement, and the
-// audit snapshot envelope — callers pass only what differs.
-
-export const DELTA_SUPPLIER = {
-  name: "Delta Emergency Stock",
-  contactEmail: "rfq+delta@synthetic.reliefgrid.test",
-  region: "East",
-} as const;
+// Shared invalidation helpers for verified public evidence changes.
 
 // Mirror already-failed source checks onto offer status (recovery sweep).
 // Grades nothing: an offer is touched only when a failed check exists.
@@ -46,63 +36,10 @@ export async function replaceHoldNotice(
   });
 }
 
-// Idempotent synthetic Delta replacement offer shared by the demo
-// replacement and the guided-recovery replacement.
-export async function ensureDeltaReplacement(
-  ctx: MutationCtx,
-  args: { needId: Id<"needs">; ownerId: string; rawEmailId: string; quote: string; reason: string },
-): Promise<{ offerId: Id<"offers">; created: boolean }> {
-  let supplier = await ctx.db
-    .query("suppliers")
-    .withIndex("by_owner_and_email", (q) => q.eq("ownerId", args.ownerId).eq("contactEmail", DELTA_SUPPLIER.contactEmail))
-    .unique();
-  if (!supplier) {
-    const id = await ctx.db.insert("suppliers", {
-      name: DELTA_SUPPLIER.name,
-      contactEmail: DELTA_SUPPLIER.contactEmail,
-      region: DELTA_SUPPLIER.region,
-      verified: true,
-      ownerId: args.ownerId,
-      createdAt: Date.now(),
-    });
-    supplier = await ctx.db.get(id);
-  }
-  if (!supplier) throw new Error("Could not create replacement supplier");
-  const current = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", args.needId)).take(200);
-  const existing = current.find((offer) => offer.supplierId === supplier!._id);
-  if (existing) return { offerId: existing._id, created: false };
-  const offerId = await ctx.db.insert("offers", {
-    needId: args.needId,
-    supplierId: supplier._id,
-    qty: 70,
-    unitPriceCents: 1200,
-    arrivalAt: Date.now() + 2 * 3600000,
-    certStatus: "verified",
-    conditions: [],
-    confidence: 0.98,
-    rawEmailId: args.rawEmailId,
-    language: "en",
-    status: "active",
-    updatedAt: Date.now(),
-  });
-  await ctx.db.insert("sourceChecks", {
-    offerId,
-    url: "https://example.com/demo/delta-nsf53",
-    quote: args.quote,
-    retrievedAt: Date.now(),
-    status: "verified",
-    reason: args.reason,
-    type: "recall",
-  });
-  const offer = await ctx.db.get(offerId);
-  await offersByNeed.insert(ctx, offer!);
-  return { offerId, created: true };
-}
-
 export type DriftSnapshotOffer = { supplier: string; qty: number; certStatus: string };
 
-// The one audit snapshot envelope behind drift, recovery, approval, and
-// demo fixtures. Optional sections stay in fixed positions so snapshots
+// The audit snapshot envelope behind drift and approval. Optional sections
+// stay in fixed positions so snapshots
 // keep a stable shape no matter which writer mints them.
 export function buildDriftSnapshot(args: {
   incident: { id: string; title?: string };

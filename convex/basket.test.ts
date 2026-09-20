@@ -22,7 +22,14 @@ function asUser(t: any, subject = "test-user", name = "Test User") {
 async function seedSuppliers(t: any) {
   const existing: any[] = await t.query(api.suppliers.listSuppliers, {});
   if (existing.length > 0) return existing;
-  return await t.mutation(api.suppliers.seedSuppliers, {});
+  for (let index = 1; index <= 2; index++) {
+    await t.mutation(api.suppliers.upsertSupplier, {
+      name: `Test Supplier ${index}`,
+      contactEmail: `basket${index}@vendor.example.org`,
+      region: `Region ${index}`,
+    });
+  }
+  return await t.query(api.suppliers.listSuppliers, {});
 }
 
 describe("basket coverage rollup", () => {

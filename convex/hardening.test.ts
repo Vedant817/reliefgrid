@@ -21,7 +21,14 @@ function asUser(t: any, subject = "test-user", name = "Test User") {
 async function seedSuppliers(t: any) {
   const existing: any[] = await t.query(api.suppliers.listSuppliers, {});
   if (existing.length > 0) return existing;
-  return await t.mutation(api.suppliers.seedSuppliers, {});
+  for (let index = 1; index <= 5; index++) {
+    await t.mutation(api.suppliers.upsertSupplier, {
+      name: `Test Supplier ${index}`,
+      contactEmail: `supplier${index}@vendor.example.org`,
+      region: `Region ${index}`,
+    });
+  }
+  return await t.query(api.suppliers.listSuppliers, {});
 }
 
 async function seedNeed(t: any, overrides: any = {}) {
@@ -261,12 +268,6 @@ describe("authorization and decision integrity", () => {
     expect(plan.feasible).toBe(false);
   });
 
-  test("normal incidents cannot inject synthetic replacement stock", async () => {
-    const t = asUser(makeT());
-    const { needId } = await seedNeed(t);
-    await expect(t.mutation(api.evidenceDrift.addReplacementOffer, { needId })).rejects.toThrow(/controlled demo/i);
-  });
-
   test("a later certification check cannot erase an active authoritative recall", async () => {
     const t = asUser(makeT());
     const { needId } = await seedNeed(t, { certRequired: "NSF/ANSI 53" });
@@ -489,62 +490,6 @@ describe("authorization and decision integrity", () => {
     expect(approved[0].status).toBe("approved");
   });
 
-  test("public demo bulletin exposes only display fields and recall setup can roll back", async () => {
-    const t = asUser(makeT());
-    const reset: any = await t.mutation(api.demo.resetDemo, {});
-    const state: any = await t.query(api.evidenceDrift.getEvidenceDriftState, { needId: reset.needId });
-    const bulletinId = state.bulletin._id;
-
-    await t.mutation(internal.evidenceDrift.setBulletinRecall, { needId: reset.needId });
-    expect((await t.query(api.evidenceDrift.getPublicBulletin, { bulletinId }))?.state).toBe("RECALL_ACTIVE");
-    await t.mutation(internal.evidenceDrift.restoreBulletinClear, { bulletinId });
-    const publicBulletin: any = await t.query(api.evidenceDrift.getPublicBulletin, { bulletinId });
-    expect(publicBulletin).toEqual({
-      title: "Northstar Filter Model NF-53 Safety Bulletin",
-      state: "CLEAR",
-      body: "No active safety notices for model NF-53.",
-      updatedAt: expect.any(Number),
-    });
-    expect(publicBulletin.ownerId).toBeUndefined();
-  });
-
-  test("replacement stock is idempotent across demo and workflow entries", async () => {
-    const t = asUser(makeT());
-    const { needId } = await t.mutation(api.demo.resetDemo, {});
-    await t.mutation(api.evidenceDrift.addReplacementOffer, { needId });
-    await t.mutation(api.evidenceDrift.addReplacementOffer, { needId });
-    const second: any = await t.mutation(internal.recoveryWorkflow.createReplacement, { needId });
-    expect(second.created).toBe(false);
-    const offers: any[] = await t.query(api.offers.listOffersByNeed, { needId });
-    const deltas = offers.filter((o) => o.rawEmailId === "demo-replacement" || o.rawEmailId === "workflow-replacement");
-    expect(deltas).toHaveLength(1);
-  });
-
-  test("demo reset purges the full incident graph without orphans", async () => {
-    const t = asUser(makeT());
-    const first: any = await t.mutation(api.demo.resetDemo, {});
-    await t.mutation(internal.evidenceDrift.setBulletinRecall, { needId: first.needId });
-    await t.mutation(internal.evidenceDrift.applyVerifiedRecall, {
-      needId: first.needId, sourceUrl: "https://example.com/bulletin",
-      quote: "RECALL ACTIVE", contentHash: "h",
-    });
-    await t.mutation(api.evidenceDrift.addReplacementOffer, { needId: first.needId });
-    const plans: any = await t.query(api.allocations.listAllocationPlans, { needId: first.needId });
-    await t.mutation(api.allocations.approvePlan, { planId: plans[0]._id });
-    const second: any = await t.mutation(api.demo.resetDemo, {});
-    expect(await t.query(api.needs.listNeedsByIncident, { incidentId: second.incidentId })).toHaveLength(1);
-    expect(await t.query(api.offers.listOffersByNeed, { needId: second.needId })).toHaveLength(3);
-    expect(await t.query(api.offers.listOfferVersions, { needId: second.needId })).toHaveLength(3);
-    expect(await t.query(api.sourceChecks.listSourceChecksByNeed, { needId: second.needId })).toHaveLength(3);
-    expect(await t.query(api.rfq.listThreadsByNeed, { needId: second.needId })).toHaveLength(3);
-    const freshPlans: any = await t.query(api.allocations.listAllocationPlans, { needId: second.needId });
-    expect(freshPlans).toHaveLength(1);
-    expect(freshPlans[0].approval).toBeNull();
-    const state: any = await t.query(api.evidenceDrift.getEvidenceDriftState, { needId: second.needId });
-    expect(state.holdNotice).toBeNull();
-    expect(state.bulletin?.state).toBe("CLEAR");
-  });
-
   test("drift snapshots keep a stable envelope", () => {
     expect(buildDriftSnapshot({
       incident: { id: "i", title: "T" },
@@ -553,7 +498,7 @@ describe("authorization and decision integrity", () => {
     })).toBe('{"incident":{"id":"i","title":"T"},"need":{"id":"n","item":"X","qty":1},"plan":{"id":"p","coverage":1,"costCents":2,"suppliers":["S"]}}');
   });
 
-  test("award notices move sending → sent → skipped, failed → sending", async () => {
+  test("award notices move sending → sent and failed → sending", async () => {
     const t = asUser(makeT(), "award-owner", "Award Owner");
     const { needId } = await seedNeed(t);
     const suppliers: any[] = await seedSuppliers(t);
@@ -567,29 +512,29 @@ describe("authorization and decision integrity", () => {
     const computed: any = await t.mutation(api.allocations.computeAllocation, { needId });
 
     const first: any = await t.mutation(internal.awardNotices.claimNotice, {
-      planId: computed.planId, threadId: threads[0]._id, kind: "award", demo: false,
+      planId: computed.planId, threadId: threads[0]._id, kind: "award",
     });
     expect(first.shouldSend).toBe(true);
     expect(first.shouldReconcile).toBe(false);
     const retry: any = await t.mutation(internal.awardNotices.claimNotice, {
-      planId: computed.planId, threadId: threads[0]._id, kind: "award", demo: false,
+      planId: computed.planId, threadId: threads[0]._id, kind: "award",
     });
     expect(retry.shouldSend).toBe(false);
     expect(retry.shouldReconcile).toBe(true);
     await t.mutation(internal.awardNotices.finishNotice, { noticeId: first.noticeId, status: "sent", messageId: "m-1" });
     const done: any = await t.mutation(internal.awardNotices.claimNotice, {
-      planId: computed.planId, threadId: threads[0]._id, kind: "award", demo: false,
+      planId: computed.planId, threadId: threads[0]._id, kind: "award",
     });
     expect(done.shouldSend).toBe(false);
     expect(done.shouldReconcile).toBe(false);
 
     const decline: any = await t.mutation(internal.awardNotices.claimNotice, {
-      planId: computed.planId, threadId: threads[1]._id, kind: "decline", demo: false,
+      planId: computed.planId, threadId: threads[1]._id, kind: "decline",
     });
     expect(decline.shouldSend).toBe(true);
     await t.mutation(internal.awardNotices.finishNotice, { noticeId: decline.noticeId, status: "failed", error: "provider 429" });
     const retried: any = await t.mutation(internal.awardNotices.claimNotice, {
-      planId: computed.planId, threadId: threads[1]._id, kind: "decline", demo: false,
+      planId: computed.planId, threadId: threads[1]._id, kind: "decline",
     });
     expect(retried.shouldSend).toBe(true);
     expect(retried.shouldReconcile).toBe(false);
@@ -701,14 +646,4 @@ describe("authorization and decision integrity", () => {
     expect(byId[String(second.planId)]).toBe("proposed");
   });
 
-  test("demo reset is per-owner isolated", async () => {
-    const raw = makeT();
-    const ownerA = asUser(raw, "iso-a", "Iso A");
-    const ownerB = asUser(raw, "iso-b", "Iso B");
-    const a: any = await ownerA.mutation(api.demo.resetDemo, {});
-    const b: any = await ownerB.mutation(api.demo.resetDemo, {});
-    expect(String(a.incidentId)).not.toBe(String(b.incidentId));
-    expect(await ownerA.query(api.needs.listNeedsByIncident, { incidentId: a.incidentId })).toHaveLength(1);
-    await expect(ownerA.query(api.needs.listNeedsByIncident, { incidentId: b.incidentId })).rejects.toThrow(/not found/i);
-  });
 });

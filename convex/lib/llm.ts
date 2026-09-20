@@ -1,6 +1,6 @@
 declare const process: { env: Record<string, string | undefined> };
 
-export type LlmKind = "groq" | "openai" | "mock";
+export type LlmKind = "groq" | "openai" | "unconfigured";
 
 export type LlmConfig = {
   kind: LlmKind;
@@ -22,7 +22,8 @@ export type ExtractedOffer = {
 
 // Resolve the live LLM lane from deployment env. Groq is preferred because it
 // is free and OpenAI-compatible; direct OpenAI works through the same path.
-// No key at all means the deterministic mock lane. Never throws.
+// Missing credentials are represented explicitly. Callers fail before a
+// provider request and never fabricate an extraction.
 export function resolveLlmProvider(env: Record<string, string | undefined> = process.env): LlmConfig {
   if (env.GROQ_API_KEY) {
     return {
@@ -40,7 +41,7 @@ export function resolveLlmProvider(env: Record<string, string | undefined> = pro
       model: env.OPENAI_MODEL ?? "gpt-4o-mini",
     };
   }
-  return { kind: "mock", baseUrl: null, apiKey: null, model: "deterministic-mock" };
+  return { kind: "unconfigured", baseUrl: null, apiKey: null, model: "" };
 }
 
 export function buildExtractionPrompt(rawBody: string, referenceTimeIso = new Date().toISOString()): { system: string; user: string } {
@@ -62,7 +63,7 @@ function clamp01(n: unknown, fallback = 0): number {
 }
 
 // Parse and validate model JSON. Returns null when the output is unusable so
-// the caller falls back to the deterministic mock instead of hallucinating.
+// the caller rejects the provider output instead of guessing values.
 export function parseExtractionJson(text: string): ExtractedOffer | null {
   try {
     const cleaned = text.replace(/```json|```/g, "").trim();

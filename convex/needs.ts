@@ -81,18 +81,8 @@ export const getNeed = query({
   },
 });
 
-export const getDemoNeed = query({
-  args: { needId: v.id("needs") },
-  returns: v.any(),
-  handler: async (ctx, args) => {
-    const { need, incident, ownerId } = await requireNeedOwner(ctx, args.needId);
-    if (!incident.isDemo) throw new Error("This operation is available only for the controlled demo");
-    return { ...need, ownerId };
-  },
-});
-
 // Owner-checked need plus identity for need-scoped actions (public recall
-// checks, supplier discovery). Works for demo and customer needs alike.
+// checks and supplier discovery).
 export const getNeedOwnership = internalQuery({
   args: { needId: v.id("needs") },
   returns: v.any(),

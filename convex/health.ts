@@ -7,11 +7,10 @@ import { requireOwnerId } from "./model/auth";
 declare const process: { env: Record<string, string | undefined> };
 
 type Provider = "convex" | "openai" | "groq" | "firecrawl" | "agentmail";
-type RunStatus = "live" | "mock" | "degraded" | "not_configured" | "failed";
+type RunStatus = "live" | "degraded" | "not_configured" | "failed";
 
 const runStatus = v.union(
   v.literal("live"),
-  v.literal("mock"),
   v.literal("degraded"),
   v.literal("not_configured"),
   v.literal("failed"),
@@ -38,7 +37,7 @@ const providerRun = v.object({
   ownerId: v.optional(v.string()),
 });
 
-// Backend integration health reports live/mock/degraded/not_configured
+// Backend integration health reports live/degraded/not_configured
 // from env presence and recent providerRuns. Never exposes secrets.
 export const getProviderHealth = query({
   args: {},

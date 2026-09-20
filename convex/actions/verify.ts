@@ -14,7 +14,7 @@ import {
 import { checkLimit } from "../rateLimits";
 import { recordRun } from "../lib/runs";
 
-// Live-only Firecrawl verification. There is no mock lane: missing keys or
+// Live-only Firecrawl verification. There is no fabricated fallback: missing keys or
 // provider errors throw after recording a failed run, so verification state
 // is never silently fabricated.
 export const verifyOffer = action({

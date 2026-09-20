@@ -4,7 +4,6 @@ import rateLimiter from "@convex-dev/rate-limiter/convex.config.js";
 import aggregate from "@convex-dev/aggregate/convex.config.js";
 import agentmail from "@agentmail/convex/convex.config";
 import firecrawl from "@firecrawl/firecrawl-convex/convex.config";
-import workflow from "@convex-dev/workflow/convex.config";
 
 const app = defineApp({
   env: {
@@ -19,7 +18,6 @@ app.use(aggregate, { name: "aggregate" });
 // (actions/sendRfq); the component is wired for Svix-verified inbound ingest
 // and reactive thread state, whose webhook secret is passed explicitly.
 app.use(agentmail);
-app.use(workflow);
 app.use(firecrawl, {
   httpPrefix: "/firecrawl/",
   env: {

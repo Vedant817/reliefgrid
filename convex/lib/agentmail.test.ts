@@ -37,7 +37,7 @@ describe("buildRfqEmail", () => {
     expect(subject).toContain("100x");
     expect(text).toContain("Apex");
     expect(text).toContain("NSF/ANSI 53");
-    expect(text).toContain("controlled demo");
+    expect(text).not.toContain("demo");
   });
 });
 

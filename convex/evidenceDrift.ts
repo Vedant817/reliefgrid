@@ -1,23 +1,17 @@
 import { v } from "convex/values";
-import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
+import { internalMutation, internalQuery, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { writeAudit } from "./lib/audit";
-import { buildDriftSnapshot, ensureDeltaReplacement, replaceHoldNotice } from "./lib/drift";
+import { buildDriftSnapshot, replaceHoldNotice } from "./lib/drift";
 import { requireNeedOwner } from "./model/auth";
 import { recomputeAllocation } from "./allocations";
-
-const BULLETIN_KEY = "filter-nsf53";
-const DEMO_TITLE = "Flood Shelter - North District";
 
 export const getEvidenceDriftState = query({
   args: { needId: v.optional(v.id("needs")) },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const ownerId = args.needId ? (await requireNeedOwner(ctx, args.needId)).ownerId : null;
-    const bulletin = ownerId
-      ? await ctx.db.query("demoBulletins").withIndex("by_owner_and_key", (q) => q.eq("ownerId", ownerId).eq("key", BULLETIN_KEY)).unique()
-      : null;
+    if (args.needId) await requireNeedOwner(ctx, args.needId);
     const notices = args.needId
       ? await ctx.db.query("holdNotices").withIndex("by_need", (q) => q.eq("needId", args.needId!)).order("desc").take(1)
       : [];
@@ -29,102 +23,12 @@ export const getEvidenceDriftState = query({
       const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", holdNotice.needId)).first();
       canSendHoldNotice = Boolean(offer && inbox && threads.some((thread) => thread.supplierId === offer.supplierId && thread.agentmailMessageId));
     }
-    return { bulletin, holdNotice, canSendHoldNotice };
+    return { holdNotice, canSendHoldNotice };
   },
 });
 
-export const getPublicBulletin = query({
-  args: { bulletinId: v.id("demoBulletins") },
-  returns: v.union(
-    v.object({
-      title: v.string(),
-      state: v.string(),
-      body: v.string(),
-      updatedAt: v.number(),
-    }),
-    v.null(),
-  ),
-  handler: async (ctx, args) => {
-    const bulletin = await ctx.db.get(args.bulletinId);
-    if (!bulletin) return null;
-    return { title: bulletin.title, state: bulletin.state, body: bulletin.body, updatedAt: bulletin.updatedAt };
-  },
-});
-
-export const applyVerifiedRecall = internalMutation({
-  args: { needId: v.id("needs"), sourceUrl: v.string(), quote: v.string(), contentHash: v.string() },
-  returns: v.object({ planId: v.id("allocationPlans"), totalQty: v.number(), totalCostCents: v.number() }),
-  handler: async (ctx, args) => {
-    const need = await ctx.db.get(args.needId);
-    if (!need) throw new Error("Need not found");
-    const incident = await ctx.db.get(need.incidentId);
-    if (!incident?.ownerId) throw new Error("Incident owner not found");
-    if (!incident.isDemo) throw new Error("Controlled recall can only modify a demo incident");
-    const apex = await ctx.db.query("suppliers").withIndex("by_owner_and_email", (q) => q.eq("ownerId", incident.ownerId).eq("contactEmail", "rfq+apex@synthetic.reliefgrid.test")).unique();
-    if (!apex) throw new Error("Apex demo supplier not found");
-    const offers = await ctx.db.query("offers").withIndex("by_need", (q) => q.eq("needId", need._id)).take(200);
-    const offer = offers.find((candidate) => candidate.supplierId === apex._id);
-    if (!offer) throw new Error("Apex demo offer not found");
-
-    const citationUrl = args.sourceUrl;
-    // Written through the shared check seam so the recall rule — not this
-    // caller — derives the failed status.
-    await ctx.runMutation(internal.sourceChecks.addSourceCheck, {
-      offerId: offer._id,
-      url: citationUrl,
-      quote: args.quote,
-      status: "failed",
-      reason: "Controlled bulletin changed after initial verification",
-      type: "recall",
-      claim: "NF-53 recall status",
-      sourceAuthority: "authoritative",
-      contentHash: args.contentHash,
-      matched: true,
-    });
-
-    await replaceHoldNotice(ctx, {
-      needId: need._id,
-      offerId: offer._id,
-      subject: "HOLD: Apex NF-53 allocation pending recall review",
-      body: "Do not dispatch the Apex NF-53 allocation. A manufacturer bulletin now reports an active recall. Human approval is required before this notice is sent.",
-      citationUrl,
-    });
-    // No provider run is recorded here: the controlled bulletin is local-only
-    // so this recheck is simulated, and the ledger only stores real attempts.
-    // The invalidation itself is audited below.
-    const result = await recomputeAllocation(ctx, need._id, {
-      supersedeApproved: true,
-      allowEmpty: true,
-      lineReason: "selected after evidence recheck",
-    });
-    if (!result.planId) throw new Error("Evidence recheck produced no plan");
-    await writeAudit(ctx, {
-      entity: "offers",
-      entityId: offer._id,
-      action: "invalidated_by_recall",
-      actor: "evidence-monitor",
-      meta: JSON.stringify({ citationUrl, previousCertStatus: "verified", nextCertStatus: "failed" }),
-      incidentId: need.incidentId,
-      snapshot: buildDriftSnapshot({
-        incident: { id: String(need.incidentId), title: DEMO_TITLE },
-        need: { id: String(need._id), item: need.item, qty: need.qty },
-        offers: [
-          { supplier: "Apex Medical Supply", qty: offer.qty, certStatus: "failed" },
-          { supplier: "Casa Suministros", qty: 30, certStatus: "verified" },
-        ],
-        plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: ["Casa Suministros"] },
-        causalDiff: "Source recall removed Apex; plan coverage changed 100 -> 30",
-      }),
-    });
-    return { planId: result.planId, totalQty: result.totalQty, totalCostCents: result.totalCostCents };
-  },
-});
-
-// General recall path for REAL public sources (CPSC/FDA/NSF). Unlike
-// applyVerifiedRecall it works on any need and any offer: the caller must
-// have confirmed an authoritative recall page matching the offer's product
-// identifiers. Same transactional guarantees: failed source check, offer
-// invalidation, draft hold notice, recompute, audit.
+// A confirmed authoritative recall invalidates matching offers, drafts a hold
+// notice, recomputes the plan, and records the change in one transaction.
 export const applyPublicRecall = internalMutation({
   args: { needId: v.id("needs"), offerIds: v.array(v.id("offers")), sourceUrl: v.string(), quote: v.string(), contentHash: v.string() },
   returns: v.object({ planId: v.id("allocationPlans"), totalQty: v.number(), totalCostCents: v.number(), invalidated: v.number() }),
@@ -159,7 +63,7 @@ export const applyPublicRecall = internalMutation({
       needId: need._id,
       offerId: invalidated[0].id,
       subject: "HOLD: allocation pending recall review",
-      body: `Do not dispatch the ${invalidated.map((o) => o.supplierName).join(", ")} allocation. A public recall source reports a matching recall. Human approval is required before this notice is sent.`,
+      body: `Do not dispatch the ${invalidated.map((offer) => offer.supplierName).join(", ")} allocation. A public recall source reports a matching recall. Human approval is required before this notice is sent.`,
       citationUrl: args.sourceUrl,
     });
     const result = await recomputeAllocation(ctx, need._id, {
@@ -173,7 +77,7 @@ export const applyPublicRecall = internalMutation({
       entityId: String(invalidated[0].id),
       action: "invalidated_by_recall",
       actor: "evidence-monitor",
-      meta: JSON.stringify({ citationUrl: args.sourceUrl, invalidated: invalidated.map((o) => String(o.id)), nextCertStatus: "failed" }),
+      meta: JSON.stringify({ citationUrl: args.sourceUrl, invalidated: invalidated.map((offer) => String(offer.id)), nextCertStatus: "failed" }),
       incidentId: need.incidentId,
       snapshot: buildDriftSnapshot({
         incident: { id: String(need.incidentId), title: incident.title },
@@ -181,50 +85,7 @@ export const applyPublicRecall = internalMutation({
         plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: [] },
       }),
     });
-    return {
-      planId: result.planId,
-      totalQty: result.totalQty,
-      totalCostCents: result.totalCostCents,
-      invalidated: invalidated.length,
-    };
-  },
-});
-
-export const addReplacementOffer = mutation({
-  args: { needId: v.id("needs") },
-  returns: v.object({ planId: v.id("allocationPlans"), totalQty: v.number(), totalCostCents: v.number() }),
-  handler: async (ctx, args) => {
-    const { need, ownerId } = await requireNeedOwner(ctx, args.needId);
-    const incident = await ctx.db.get(need.incidentId);
-    if (!incident?.isDemo) throw new Error("Synthetic replacement stock is available only in the controlled demo");
-    await ensureDeltaReplacement(ctx, {
-      needId: need._id,
-      ownerId,
-      rawEmailId: "demo-replacement",
-      quote: "Replacement lot is not affected by bulletin",
-      reason: "Labeled synthetic replacement fixture",
-    });
-    const result = await recomputeAllocation(ctx, need._id, {
-      supersedeApproved: true,
-      allowEmpty: true,
-      lineReason: "selected after evidence recheck",
-    });
-    if (!result.planId) throw new Error("Evidence recheck produced no plan");
-    await writeAudit(ctx, {
-      entity: "incidents", entityId: need.incidentId, action: "replacement_plan_proposed", actor: "allocator", incidentId: need.incidentId,
-      snapshot: buildDriftSnapshot({
-        incident: { id: String(need.incidentId), title: DEMO_TITLE },
-        need: { id: String(need._id), item: need.item, qty: need.qty },
-        offers: [
-          { supplier: "Apex Medical Supply", qty: 70, certStatus: "failed" },
-          { supplier: "Casa Suministros", qty: 30, certStatus: "verified" },
-          { supplier: "Delta Emergency Stock", qty: 70, certStatus: "verified" },
-        ],
-        plan: { id: String(result.planId), coverage: result.totalQty, costCents: result.totalCostCents, suppliers: ["Casa Suministros", "Delta Emergency Stock"] },
-        causalDiff: "Replacement stock restored plan coverage 30 -> 100",
-      }),
-    });
-    return { planId: result.planId, totalQty: result.totalQty, totalCostCents: result.totalCostCents };
+    return { planId: result.planId, totalQty: result.totalQty, totalCostCents: result.totalCostCents, invalidated: invalidated.length };
   },
 });
 
@@ -278,54 +139,8 @@ export const releaseFreshHoldNoticeClaim = internalMutation({
   },
 });
 
-export const getBulletin = internalQuery({
-  args: { bulletinId: v.id("demoBulletins") },
-  returns: v.any(),
-  handler: async (ctx, args) => await ctx.db.get(args.bulletinId),
-});
-
-export const setBulletinRecall = internalMutation({
-  args: { needId: v.id("needs") },
-  returns: v.id("demoBulletins"),
-  handler: async (ctx, args) => {
-    const need = await ctx.db.get(args.needId);
-    if (!need) throw new Error("Need not found");
-    const incident = await ctx.db.get(need.incidentId);
-    if (!incident?.ownerId) throw new Error("Incident owner not found");
-    if (!incident.isDemo) throw new Error("Controlled recall can only modify a demo incident");
-    const bulletin = await ctx.db.query("demoBulletins").withIndex("by_owner_and_key", (q) => q.eq("ownerId", incident.ownerId).eq("key", BULLETIN_KEY)).unique();
-    if (!bulletin) throw new Error("Reset Demo before running Evidence Drift");
-    await ctx.db.patch(bulletin._id, {
-      state: "RECALL_ACTIVE",
-      body: "RECALL ACTIVE: model NF-53 lot A17 may fail contaminant reduction requirements. Stop distribution pending review.",
-      updatedAt: Date.now(),
-    });
-    return bulletin._id;
-  },
-});
-
-export const restoreBulletinClear = internalMutation({
-  args: { bulletinId: v.id("demoBulletins") },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    const bulletin = await ctx.db.get(args.bulletinId);
-    if (bulletin?.state === "RECALL_ACTIVE") {
-      await ctx.db.patch(args.bulletinId, {
-        state: "CLEAR",
-        body: "No active safety notices for model NF-53.",
-        updatedAt: Date.now(),
-      });
-    }
-    return null;
-  },
-});
-
 export const markHoldNoticeSent = internalMutation({
-  args: {
-    noticeId: v.id("holdNotices"),
-    approvedBy: v.string(),
-    agentmailThreadId: v.string(),
-  },
+  args: { noticeId: v.id("holdNotices"), approvedBy: v.string(), agentmailThreadId: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
     const notice = await ctx.db.get(args.noticeId);

@@ -2,7 +2,6 @@ import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
 import { requireNeedOwner, requireSupplierOwner, requireThreadOwner, supplierBelongsTo } from "./model/auth";
-import { normalizeMailbox } from "./lib/agentmail";
 
 export const getThreadForSend = internalQuery({  args: { threadId: v.id("rfqThreads") },
   returns: v.any(),
@@ -18,7 +17,7 @@ export const getThreadForSend = internalQuery({  args: { threadId: v.id("rfqThre
 });
 // Owner-checked thread detail for human-approved reminder nudges. Only a
 // thread that was really sent (provider message recorded) and is still
-// waiting for a reply can be nudged, and never a synthetic contact.
+// waiting for a reply can be nudged.
 export const getThreadForReminder = internalQuery({
   args: { threadId: v.id("rfqThreads") },
   returns: v.any(),
@@ -28,9 +27,6 @@ export const getThreadForReminder = internalQuery({
       throw new Error("Only unanswered RFQs can be nudged");
     }
     const { supplier } = await requireSupplierOwner(ctx, thread.supplierId);
-    if (normalizeMailbox(supplier.contactEmail)?.split("@")[1] === "synthetic.reliefgrid.test") {
-      throw new Error("Controlled synthetic contacts cannot receive email");
-    }
     const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", thread.needId)).first();
     if (!inbox) throw new Error("Need inbox not found");
     return { thread, need, supplier, inbox, ownerId };
@@ -156,9 +152,6 @@ export const claimRfqSend = internalMutation({
     }
     const reconcile = thread.status === "sending";
     const { supplier } = await requireSupplierOwner(ctx, thread.supplierId);
-    if (normalizeMailbox(supplier.contactEmail)?.split("@")[1] === "synthetic.reliefgrid.test") {
-      throw new Error("Controlled synthetic contacts cannot receive email");
-    }
     const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", thread.needId)).first();
     if (!inbox) throw new Error("Create the need inbox before sending RFQs");
     const claimedAt = thread.sendClaimedAt ?? Date.now();

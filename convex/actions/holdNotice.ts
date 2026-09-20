@@ -7,9 +7,9 @@ import type { Id } from "../_generated/dataModel";
 import { replyAgentMailMessage, resolveAgentMail } from "../lib/agentmail";
 import { guardedProviderSend, IDEMPOTENCY_WINDOW_MS } from "../lib/sendGuard";
 
-// Approval-gated live hold-notice send. There is no mock lane: without an
-// AgentMail key, or on provider failure, this throws and the notice stays
-// a draft. Demo safety: mail goes to the app inbox itself.
+// Approval-gated live hold-notice send. Without an AgentMail key, an
+// established supplier thread, or a successful provider response, this
+// throws and the notice remains a draft.
 export const approveAndSendHoldNotice = action({
   args: { noticeId: v.id("holdNotices") },
   returns: v.object({

@@ -56,7 +56,7 @@ export const draftClarification = action({
     const unresolved = unresolvedFields(offer);
     if (unresolved.length === 0) throw new Error("This offer does not need clarification");
     const llm = resolveLlmProvider();
-    if (llm.kind === "mock") throw new Error("no LLM key configured (GROQ_API_KEY or OPENAI_API_KEY)");
+    if (llm.kind === "unconfigured") throw new Error("no LLM key configured (GROQ_API_KEY or OPENAI_API_KEY)");
     let reply;
     try {
       reply = await chatJson(
