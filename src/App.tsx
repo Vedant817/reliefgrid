@@ -6,10 +6,6 @@ import { IncidentBoard } from "./components/IncidentBoard";
 import { OfferMatrix } from "./components/OfferMatrix";
 import { AllocationInspector } from "./components/AllocationInspector";
 import { AuditReceipt } from "./components/AuditReceipt";
-import { ProviderProof } from "./components/ProviderProof";
-import { DemoRail } from "./components/DemoRail";
-import { EvidenceDrift } from "./components/EvidenceDrift";
-import { DemoBulletin } from "./pages/DemoBulletin";
 import { CounterfactualLab } from "./components/CounterfactualLab";
 import { DecisionReplay, ReplayBoundary } from "./components/DecisionReplay";
 import { NewIncidentForm } from "./components/NewIncidentForm";
@@ -21,7 +17,6 @@ import { DecisionReport } from "./pages/DecisionReport";
 import { formatDate, formatDeadline } from "./lib/format";
 import { nextStepForWorkspace } from "./lib/outreach";
 export default function App() {
-  const demoMode = new URLSearchParams(window.location.search).get("demo") === "1";
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const { signIn } = useAuthActions();
   const [authError, setAuthError] = useState<string | null>(null);
@@ -30,7 +25,8 @@ export default function App() {
       void signIn("anonymous").catch((cause) => setAuthError(cause instanceof Error ? cause.message : "Could not start a secure workspace"));
     }
   }, [authError, authLoading, isAuthenticated, signIn]);
-  const allIncidents = useQuery(api.incidents.listIncidents, isAuthenticated ? {} : "skip") ?? [];
+  const incidentQuery = useQuery(api.incidents.listIncidents, isAuthenticated ? {} : "skip");
+  const allIncidents = incidentQuery ?? [];
   const [incidentSearch, setIncidentSearch] = useState("");
   const searchedIncidents: any = useQuery(
     api.search.searchIncidents,
@@ -71,11 +67,11 @@ export default function App() {
     threadCount: threads.length,
     offerCount: offers.length,
     verifiedCount: verifiedOfferCount,
+    requiresEvidence: Boolean(activeNeed?.certRequired),
     hasPlan: Boolean(latestPlan),
     planApproved: latestPlan?.status === "approved",
   });
 
-  const resetDemo = useMutation(api.demo.resetDemo);
   const createIncident = useMutation(api.incidents.createIncident);
   const createNeed = useMutation(api.needs.createNeed);
   const computeAllocation = useMutation(api.allocations.computeAllocation);
@@ -88,20 +84,6 @@ export default function App() {
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 3000);
-  };
-
-  const handleSeed = async () => {
-    setBusy(true);
-    try {
-      const res = await resetDemo({});
-      if (res?.incidentId) setSelectedIncidentId(res.incidentId);
-      if (res?.needId) setSelectedNeedId(res.needId);
-      showToast("Sample scenario reloaded");
-    } catch (e: any) {
-      showToast(e.message ?? "Reset failed");
-    } finally {
-      setBusy(false);
-    }
   };
 
   const handleCreateRequirement = async (values: any) => {
@@ -159,12 +141,11 @@ export default function App() {
     }
   };
 
-  if (window.location.pathname === "/demo-bulletin") return <DemoBulletin />;
   if (window.location.pathname === "/report") return <DecisionReport />;
 
   if (authError && !isAuthenticated) {
     return (
-      <div className="grid min-h-screen place-items-center bg-paper p-6 text-center">
+      <div className="grid h-dvh place-items-center overflow-hidden bg-paper p-6 text-center">
         <div className="card max-w-md p-8">
           <div className="font-semibold text-seal">Secure workspace unavailable</div>
           <div className="mt-2 max-w-md text-sm text-soft">{authError}</div>
@@ -174,13 +155,39 @@ export default function App() {
     );
   }
   if (authLoading || !isAuthenticated) {
-    return <div className="grid min-h-screen place-items-center bg-paper text-soft">Starting a secure workspace…</div>;
+    return <div className="grid h-dvh place-items-center bg-paper text-soft">Starting a secure workspace…</div>;
+  }
+
+  if (incidentQuery === undefined) {
+    return <div className="grid h-dvh place-items-center bg-paper text-soft">Loading workspace…</div>;
+  }
+
+  if (allIncidents.length === 0) {
+    return (
+      <div className="flex h-dvh flex-col overflow-hidden bg-paper text-ink">
+        <header className="shrink-0 border-b border-hairline bg-sheet">
+          <div className="mx-auto flex h-16 max-w-[1400px] items-center px-4 lg:px-6">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ledger font-serif text-[18px] font-bold text-white">R</div>
+              <div>
+                <div className="font-serif text-[19px] font-bold leading-none tracking-tight">ReliefGrid</div>
+                <div className="mt-1 hidden text-xs text-soft sm:block">Evidence-backed supplier coordination</div>
+              </div>
+            </div>
+          </div>
+        </header>
+        <main className="min-h-0 flex-1 p-4 sm:p-6">
+          <WelcomeHero onCreate={() => setShowNewIncident(true)} />
+        </main>
+        {showNewIncident && <NewIncidentForm onCancel={() => setShowNewIncident(false)} onCreate={handleCreateRequirement} />}
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen bg-paper text-ink">
+    <div className="flex h-dvh flex-col overflow-hidden bg-paper text-ink">
       {/* Header */}
-      <header className="sticky top-0 z-40 border-b border-hairline bg-sheet">
+      <header className="z-40 shrink-0 border-b border-hairline bg-sheet">
         <div className="mx-auto flex h-16 max-w-[1400px] items-center justify-between gap-4 px-4 lg:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-ledger font-serif text-[18px] font-bold text-white">R</div>
@@ -203,13 +210,6 @@ export default function App() {
               placeholder="Search incidents…"
               className="hidden w-44 rounded-lg border border-hairline bg-paper px-3 py-1.5 text-xs placeholder:text-soft/70 focus:border-ledger focus:outline-none md:inline-block"
             />
-            {demoMode && <button
-              onClick={handleSeed}
-              disabled={busy}
-              className="rounded-lg border border-hairline bg-sheet px-4 py-2 text-sm font-medium text-ink hover:bg-paper disabled:opacity-50"
-            >
-              {busy ? "..." : "Reload sample"}
-            </button>}
             <button
               onClick={() => setShowNewIncident(true)}
               className="inline-flex rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep md:px-4 md:text-sm"
@@ -220,74 +220,53 @@ export default function App() {
         </div>
       </header>
 
+      <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
       {/* Stats bar */}
-      <div className="mx-auto max-w-[1400px] px-4 pt-4 lg:px-6">
-        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-          <div className="card p-4">
-            <div className="eyebrow">Secured</div>
-            <div className="mt-1 font-serif text-[28px] font-bold tabular-nums leading-none">
+      <div className="mx-auto w-full max-w-[1400px] shrink-0 px-4 pt-3 lg:px-6">
+        <div className="card grid grid-cols-2 gap-px overflow-hidden bg-hairline md:grid-cols-4">
+          <div className="bg-sheet p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-soft">Secured</div>
+            <div className="mt-1 text-base font-semibold tabular-nums leading-none">
               {activeNeed ? `${latestPlan ? latestPlan.totalQty : 0} / ${activeNeed.qty}` : "—"}
-              <span className="ml-1 align-middle font-sans text-sm font-normal text-soft">units</span>
+              <span className="ml-1 text-xs font-normal text-soft">units</span>
             </div>
-            <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#e7e2d3]">
+            <div className="mt-2 h-1 overflow-hidden rounded-full bg-[#e7e2d3]">
               <div
                 className="h-full bg-ledger"
                 style={{ width: activeNeed && latestPlan ? `${Math.min(100, (latestPlan.totalQty / activeNeed.qty) * 100)}%` : "0%" }}
               />
             </div>
           </div>
-          <div className="card p-4">
-            <div className="eyebrow">Deadline</div>
-            <div className="mt-1 text-lg font-semibold tabular-nums" title={activeNeed ? new Date(activeNeed.deadlineAt).toString() : undefined}>{activeNeed ? (activeNeed.deadlineAt - Date.now() < 48 * 3600000 ? formatDeadline(activeNeed.deadlineAt) : formatDate(activeNeed.deadlineAt)) : "—"}</div>
-            <div className={`mt-1 text-xs ${activeNeed && activeNeed.deadlineAt - Date.now() < 2 * 3600000 ? "font-medium text-seal" : "text-soft"}`}>{activeNeed ? (activeNeed.deadlineAt - Date.now() < 2 * 3600000 ? "Critical window" : "On track") : "No need"}</div>
+          <div className="bg-sheet p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-soft">Deadline</div>
+            <div className="mt-1 text-base font-semibold tabular-nums" title={activeNeed ? new Date(activeNeed.deadlineAt).toString() : undefined}>{activeNeed ? (activeNeed.deadlineAt - Date.now() < 48 * 3600000 ? formatDeadline(activeNeed.deadlineAt) : formatDate(activeNeed.deadlineAt)) : "—"}</div>
           </div>
-          <div className="card p-4">
-            <div className="eyebrow">Budget</div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">
+          <div className="bg-sheet p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-soft">Budget</div>
+            <div className="mt-1 text-base font-semibold tabular-nums">
               {latestPlan ? `$${(latestPlan.totalCostCents / 100).toFixed(0)}` : "$0"} <span className="text-sm font-normal text-soft">/ {activeNeed ? `$${(activeNeed.budgetCents / 100).toFixed(0)}` : "—"}</span>
             </div>
-            <div className="mt-1 text-xs text-soft">{latestPlan ? `${((latestPlan.totalCostCents / (activeNeed?.budgetCents ?? 1)) * 100).toFixed(0)}% utilized` : "No plan"}</div>
           </div>
-          <div className="card p-4">
-            <div className="eyebrow">Suppliers</div>
-            <div className="mt-1 text-lg font-semibold tabular-nums">{threads.length} <span className="text-sm font-normal text-soft">contacted</span></div>
-            <div className="mt-1 text-xs text-soft">{offers.length} offers, {offers.filter((o: any) => o.certStatus === "verified").length} verified</div>
+          <div className="bg-sheet p-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-soft">Suppliers</div>
+            <div className="mt-1 text-base font-semibold tabular-nums">{threads.length} <span className="text-xs font-normal text-soft">contacted, {offers.length} offers, {verifiedOfferCount} verified</span></div>
           </div>
         </div>
       </div>
 
-      {/* Main grid */}
-      {incidents.length === 0 && (
-        <div className="mx-auto max-w-[1400px] px-4 pt-4 lg:px-6">
-          <WelcomeHero busy={busy} onLoadSample={() => void handleSeed()} onCreate={() => setShowNewIncident(true)} />
-        </div>
-      )}
-      {!demoMode && activeIncident && (
-        <div className="mx-auto max-w-[1400px] px-4 pt-4 lg:px-6">
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border border-ledger/30 bg-[#eaf2ed] px-4 py-3">
-            <span className="text-sm font-semibold text-ledger-deep">Next:</span>
+      {/* Current action */}
+      {activeIncident && (
+        <div className="mx-auto w-full max-w-[1400px] shrink-0 px-4 pt-3 lg:px-6">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-[10px] border border-ledger/30 bg-[#eaf2ed] px-4 py-2.5">
+            <span className="text-xs font-semibold uppercase tracking-wide text-ledger-deep">Next</span>
             <span className="text-sm text-ink">{nextStep}</span>
-            {!activeNeed && (
-              <button onClick={() => setShowNewIncident(true)} className="rounded-lg bg-ledger px-3 py-1.5 text-xs font-medium text-white hover:bg-ledger-deep">
-                New requirement
-              </button>
-            )}
           </div>
         </div>
       )}
-      {activeIncident && <BasketSummary incidentId={activeIncident._id} />}
-      <div className="mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-4 py-4 lg:grid-cols-12 lg:px-6">
+      {activeIncident && <div className="shrink-0 [&>div]:pt-3"><BasketSummary incidentId={activeIncident._id} /></div>}
+      <div className="mx-auto grid min-h-0 w-full max-w-[1400px] flex-1 grid-cols-1 gap-3 overflow-y-auto px-4 py-3 lg:grid-cols-12 lg:overflow-hidden lg:px-6">
         {/* Left: Incident Board */}
-        <div className="space-y-4 lg:col-span-3">
-          {demoMode && <DemoRail
-            hasNeed={Boolean(activeNeed)}
-            threadCount={threads.length}
-            offerCount={offers.length}
-            verifiedOfferCount={verifiedOfferCount}
-            planStatus={latestPlan?.status}
-            busy={busy}
-            onReset={handleSeed}
-          />}
+        <div className="space-y-3 lg:col-span-3 lg:min-h-0 lg:overflow-y-auto lg:pr-1">
           <IncidentBoard
             incidents={incidents}
             needs={needs}
@@ -296,68 +275,57 @@ export default function App() {
             onSelectIncident={(id: string) => setSelectedIncidentId(id)}
             onSelectNeed={(id: string) => setSelectedNeedId(id)}
           />
-          {!demoMode && <SupplierOutreach needId={activeNeed?._id} needs={needs} suppliers={suppliers} threads={threads} />}
-          {!demoMode && <PublicRecallCheck
+          <SupplierOutreach needId={activeNeed?._id} needs={needs} suppliers={suppliers} threads={threads} />
+          <PublicRecallCheck
             needId={activeNeed?._id}
             coverage={latestPlan?.totalQty ?? 0}
             target={activeNeed?.qty ?? 0}
-          />}
-          {demoMode && <EvidenceDrift
-            needId={activeNeed?._id}
-            coverage={latestPlan?.totalQty ?? 0}
-            target={activeNeed?.qty ?? 0}
-          />}
-          {demoMode && <div className="card p-4">
-            <div className="eyebrow">Demo controls</div>
+          />
+          <div className="card p-4">
+            <div className="eyebrow">Decision controls</div>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <button onClick={handleRecompute} disabled={!activeNeed || busy} className="rounded-lg border border-hairline bg-sheet px-3 py-2 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50">
-                Recompute
+              <button onClick={handleRecompute} disabled={!activeNeed || offers.length === 0 || busy} className="rounded-lg border border-hairline bg-sheet px-3 py-2 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50">
+                Compute allocation
               </button>
               <button onClick={handleApprove} disabled={!latestPlan || latestPlan.status === "approved" || busy} className="rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep disabled:opacity-50">
-                Approve Plan
+                Approve plan
               </button>
             </div>
-            <div className="mt-3 text-[11px] leading-relaxed text-soft">Reset creates 3 synthetic offers: Apex 70 (EN), BlueRiver 100 late, Casa 30 (ES). Allocation picks 70+30. Extraction runs live via Groq, verification via Firecrawl, RFQ sends via AgentMail — ledger below proves each run.</div>
-          </div>}
+            <div className="mt-3 text-[11px] leading-relaxed text-soft">Allocation uses only eligible offers. Review the recommendation before approving supplier notices.</div>
+          </div>
         </div>
 
         {/* Center: Offer Matrix */}
-        <div className="lg:col-span-5">
+        <div className="lg:col-span-5 lg:min-h-0 lg:overflow-y-auto lg:px-0.5">
           {activeNeed ? (
             <OfferMatrix offers={offers} coverage={workspace?.coverage ?? null} />
           ) : (
             <div className="card p-6">
               <div className="text-sm font-semibold">No request selected</div>
               <div className="mt-1 text-sm text-soft">Create a requirement to start collecting comparable supplier quotes.</div>
-              <button onClick={() => setShowNewIncident(true)} className="mt-3 rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep">
-                Create requirement
-              </button>
             </div>
           )}
         </div>
 
         {/* Right: Allocation Inspector */}
-        <div className="space-y-4 lg:col-span-4">
+        <div className="space-y-3 lg:col-span-4 lg:min-h-0 lg:overflow-y-auto lg:pl-1">
           {activeNeed && <AllocationInspector plan={latestPlan} need={activeNeed} offers={offers} />}
           {latestPlan && <AuditReceipt need={activeNeed} plan={latestPlan} />}
-          {activeNeed && (demoMode ? <CounterfactualLab needId={activeNeed?._id} /> : (
+          {activeNeed && (
             <details className="card overflow-hidden">
               <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-ink">How was this decision made?</summary>
               <div className="border-t border-hairline p-3"><CounterfactualLab needId={activeNeed?._id} /></div>
             </details>
-          ))}
-          {demoMode && <details className="card overflow-hidden">
-            <summary className="eyebrow cursor-pointer px-4 py-3">How this was decided</summary>
-            <div className="border-t border-hairline p-3"><ProviderProof /></div>
-          </details>}
+          )}
+          {activeIncident && (
+            <ReplayBoundary key={activeIncident._id}>
+              <DecisionReplay incidentId={activeIncident._id} />
+            </ReplayBoundary>
+          )}
         </div>
       </div>
 
-      {demoMode && <div className="mx-auto max-w-[1400px] px-4 pb-6 lg:px-6">
-        <ReplayBoundary key={activeIncident?._id ?? "none"}>
-          <DecisionReplay incidentId={activeIncident?._id} />
-        </ReplayBoundary>
-      </div>}
+      </main>
 
       {toast && (
         <div className="fixed bottom-4 left-1/2 -translate-x-1/2 rounded-lg bg-ink px-4 py-2 text-sm font-medium text-paper">

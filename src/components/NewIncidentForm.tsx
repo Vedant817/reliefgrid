@@ -17,15 +17,12 @@ export type RequirementValues = {
   timezone: string;
 };
 
-const blankItem = (): LineItem => ({ item: "", qty: 100, budgetDollars: 1200 });
+const blankItem = (): LineItem => ({ item: "", qty: 0, budgetDollars: 0 });
 
 export function NewIncidentForm({ onCancel, onCreate }: { onCancel: () => void; onCreate: (values: RequirementValues) => Promise<void> }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<LineItem[]>([blankItem()]);
-  const deadline = new Date(Date.now() + 6 * 60 * 60 * 1000);
-  const defaultDeadline = new Date(deadline.getTime() - deadline.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-
   return (
     <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink/50 p-4" role="dialog" aria-modal="true" aria-label="Create urgent requirement">
       <form
@@ -62,7 +59,7 @@ export function NewIncidentForm({ onCancel, onCreate }: { onCancel: () => void; 
         <h2 className="mt-2 font-serif text-[26px] font-bold tracking-tight">What must arrive, where, and by when?</h2>
         <p className="mt-1 text-sm text-soft">ReliefGrid will prepare comparable supplier outreach. Nothing is sent without approval.</p>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <label className="text-xs font-medium text-soft md:col-span-2">Incident name<input required name="title" placeholder="Flood shelter water response" className="input-field mt-1" /></label>
+          <label className="text-xs font-medium text-soft md:col-span-2">Incident name<input required name="title" placeholder="Urgent equipment procurement" className="input-field mt-1" /></label>
           <label className="text-xs font-medium text-soft md:col-span-2">Operational context<textarea name="description" placeholder="Residents affected, access constraints, substitution rules" className="input-field mt-1 min-h-20" /></label>
         </div>
         <div className="mt-4 space-y-3">
@@ -70,8 +67,8 @@ export function NewIncidentForm({ onCancel, onCreate }: { onCancel: () => void; 
           {items.map((_row, index) => (
             <div key={index} className="grid gap-3 rounded-lg border border-hairline bg-paper p-3 md:grid-cols-[1fr_110px_130px_auto]">
               <label className="text-xs font-medium text-soft">Item<input required name={`item-${index}`} placeholder={index === 0 ? "Portable water filters" : "Item name"} className="input-field mt-1" /></label>
-              <label className="text-xs font-medium text-soft">Quantity<input required min="1" step="1" type="number" name={`qty-${index}`} defaultValue={100} className="input-field mt-1" /></label>
-              <label className="text-xs font-medium text-soft">Budget, USD<input required min="0" step="0.01" type="number" name={`budget-${index}`} defaultValue={1200} className="input-field mt-1" /></label>
+              <label className="text-xs font-medium text-soft">Quantity<input required min="1" step="1" type="number" name={`qty-${index}`} className="input-field mt-1" /></label>
+              <label className="text-xs font-medium text-soft">Budget, USD<input required min="0" step="0.01" type="number" name={`budget-${index}`} className="input-field mt-1" /></label>
               {items.length > 1 ? (
                 <button type="button" aria-label={`Remove item ${index + 1}`} onClick={() => setItems((current) => current.filter((_, i) => i !== index))} className="self-end rounded-lg border border-hairline px-2.5 py-2 text-xs text-soft hover:bg-sheet">Remove</button>
               ) : <span />}
@@ -86,7 +83,7 @@ export function NewIncidentForm({ onCancel, onCreate }: { onCancel: () => void; 
           </button>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <label className="text-xs font-medium text-soft">Required arrival<input required type="datetime-local" name="deadline" defaultValue={defaultDeadline} className="input-field mt-1" /></label>
+          <label className="text-xs font-medium text-soft">Required arrival<input required type="datetime-local" name="deadline" className="input-field mt-1" /></label>
           <label className="text-xs font-medium text-soft">Required certification<input name="certification" placeholder="NSF/ANSI 53" className="input-field mt-1" /></label>
           <label className="text-xs font-medium text-soft">Product/model evidence key<input name="evidenceKey" placeholder="Model NF-53 or lot A17" className="input-field mt-1" /></label>
           <label className="text-xs font-medium text-soft">Delivery location<input required name="location" placeholder="North District shelter receiving" className="input-field mt-1" /></label>

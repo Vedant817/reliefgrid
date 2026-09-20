@@ -1,5 +1,5 @@
 // Outreach coordinator: send sequencing, reply states, and workspace
-// derivations shared by App, DemoRail, and SupplierOutreach. Offer order
+// derivations shared by App and SupplierOutreach. Offer order
 // and eligibility flags live server-side in the workspace read model;
 // everything here is the client-owned remainder.
 
@@ -64,39 +64,17 @@ export function nextStepForWorkspace(args: {
   threadCount: number;
   offerCount: number;
   verifiedCount: number;
+  requiresEvidence: boolean;
   hasPlan: boolean;
   planApproved: boolean;
 }) {
   if (!args.hasNeed) return "Create your first requirement to begin.";
   if (args.threadCount === 0) return "Add suppliers below and approve outreach.";
   if (args.offerCount === 0) return "Requests are out — wait for replies, or nudge anyone quiet.";
-  if (args.verifiedCount < args.offerCount) return "Verify the remaining evidence.";
+  if (args.requiresEvidence && args.verifiedCount < args.offerCount) return "Verify the remaining certification evidence.";
   if (!args.hasPlan) return "Compute the allocation to see the recommendation.";
   if (!args.planApproved) return "Review the recommendation and approve the plan.";
   return "Done — every supplier has been answered.";
-}
-
-export type DemoStep = { label: string; complete: boolean; evidence: string };
-
-export function demoProgress(args: {
-  hasNeed: boolean;
-  threadCount: number;
-  offerCount: number;
-  verifiedOfferCount: number;
-  planStatus?: string;
-}) {
-  const steps: DemoStep[] = [
-    { label: "Create need", complete: args.hasNeed, evidence: args.hasNeed ? "need persisted" : "waiting" },
-    { label: "Send RFQs", complete: args.threadCount > 0, evidence: `${args.threadCount} threads` },
-    { label: "Receive replies", complete: args.offerCount > 0, evidence: `${args.offerCount} offers` },
-    {
-      label: "Verify evidence",
-      complete: args.offerCount > 0 && args.verifiedOfferCount === args.offerCount,
-      evidence: `${args.verifiedOfferCount}/${args.offerCount} verified`,
-    },
-    { label: "Human approval", complete: args.planStatus === "approved", evidence: args.planStatus ?? "no plan" },
-  ];
-  return { steps, nextIndex: steps.findIndex((step) => !step.complete) };
 }
 
 export function awaitingReplyThreads<T extends { status: string; agentmailMessageId?: string }>(threads: T[]) {

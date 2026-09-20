@@ -47,7 +47,7 @@ export function AuditReceipt({ need, plan }: any) {
         </div>
 
         <div className="border-t border-hairline pt-3 text-[11px] leading-relaxed text-soft">
-          Selection criteria: deadline ≤ {new Date(need.deadlineAt).toLocaleTimeString()}, cert = {need.certRequired}, confidence ≥ 0.75, minimal total cost. Synthetic demo data never triggers supplier notices.
+          Selection criteria: deadline ≤ {new Date(need.deadlineAt).toLocaleTimeString()}, cert = {need.certRequired || "not required"}, confidence ≥ 0.75, minimal total cost. Supplier notices require explicit human approval.
         </div>
 
         <div className="flex gap-2">

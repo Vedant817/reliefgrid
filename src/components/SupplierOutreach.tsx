@@ -189,20 +189,19 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
         {suppliers.length === 0 && <div className="rounded-lg border border-dashed border-[#cfc9b8] p-3 text-xs text-soft">No suppliers in this workspace.</div>}
         {suppliers.map((supplier) => {
           const thread = threads.find((row) => row.supplierId === supplier._id);
-          const synthetic = supplier.contactEmail.endsWith(".test");
           const pending = busyId === String(supplier._id);
           const reminding = thread && reminderThread === String(thread._id);
-          const canRemind = thread?.status === "sent" && thread.agentmailMessageId && !synthetic;
+          const canRemind = thread?.status === "sent" && thread.agentmailMessageId;
           return (
             <div key={supplier._id} className="rounded-lg border border-hairline p-3">
               <div className="text-sm font-medium">{supplier.name}</div>
               <div className="mt-0.5 truncate text-[11px] tabular-nums text-soft">{supplier.region}, {supplier.contactEmail}</div>
               <button
-                disabled={!needId || pending || synthetic || Boolean(thread?.agentmailMessageId)}
+                disabled={!needId || pending || Boolean(thread?.agentmailMessageId)}
                 onClick={() => void handleSend(supplier._id)}
                 className="mt-2 w-full rounded-lg bg-ledger px-2 py-1.5 text-xs font-medium text-white hover:bg-ledger-deep disabled:cursor-not-allowed disabled:bg-[#e7e2d3] disabled:text-soft"
               >
-                {pending ? "Sending…" : thread?.agentmailMessageId ? `RFQ ${thread.status}` : synthetic ? "Controlled contact" : "Approve & send RFQ"}
+                {pending ? "Sending…" : thread?.agentmailMessageId ? `RFQ ${thread.status}` : "Approve & send RFQ"}
               </button>
               {canRemind && (
                 <button

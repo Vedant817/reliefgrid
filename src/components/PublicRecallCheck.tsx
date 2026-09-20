@@ -11,7 +11,7 @@ type PublicRecallCheckProps = {
 // Real-world evidence watch for customer needs: Firecrawl searches public
 // recall sources (CPSC, FDA, NSF) for the need's exact product identifiers.
 // A confirmed authoritative match freezes every affected offer through the
-// same transactional path as the controlled demo. No match means no writes.
+// same transactional evidence path as allocation approval. No match means no writes.
 export function PublicRecallCheck({ needId, coverage, target }: PublicRecallCheckProps) {
   const checkRecalls = useAction(api.actions.checkPublicRecalls.checkPublicRecalls);
   const approveNotice = useAction(api.actions.holdNotice.approveAndSendHoldNotice);

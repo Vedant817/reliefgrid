@@ -63,7 +63,7 @@ export function IncidentBoard({ incidents, needs, activeIncident, activeNeed, on
               </button>
             );
           })}
-          {!needs.length && <div className="text-xs text-soft">No needs — seed will create the 100-filter need.</div>}
+          {!needs.length && <div className="text-xs text-soft">No requirements have been added to this incident.</div>}
         </div>
       </div>
     </div>

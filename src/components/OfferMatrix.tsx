@@ -74,11 +74,14 @@ function Badge({ children, tone }: any) {
 export function OfferMatrix({ offers, coverage }: any) {
   const draftClarification = useAction(api.actions.clarify.draftClarification);
   const sendClarification = useAction(api.actions.clarify.approveAndSendClarification);
+  const verifyOffer = useAction(api.actions.verify.verifyOffer);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [draftStatus, setDraftStatus] = useState<Record<string, string>>({});
   const [sent, setSent] = useState<Record<string, boolean>>({});
   const [pendingOffer, setPendingOffer] = useState<string | null>(null);
   const [clarificationError, setClarificationError] = useState<Record<string, string>>({});
+  const [verificationUrl, setVerificationUrl] = useState<Record<string, string>>({});
+  const [verificationMessage, setVerificationMessage] = useState<Record<string, string>>({});
 
   if (!offers.length) {
     return (
@@ -192,6 +195,42 @@ export function OfferMatrix({ offers, coverage }: any) {
                 </div>
               )}
               {clarificationError[o._id] && <div role="alert" className="mt-2 text-[11px] text-seal">{clarificationError[o._id]}</div>}
+
+              {!o.isVerified && (
+                <div className="mt-3 rounded-lg border border-hairline bg-paper p-3">
+                  <div className="eyebrow">Independent certification check</div>
+                  <p className="mt-1 text-[11px] leading-relaxed text-soft">Paste an authoritative HTTPS page that contains both the required certification and the exact product or model identifier.</p>
+                  <div className="mt-2 flex gap-2">
+                    <input
+                      type="url"
+                      aria-label={`Verification URL for ${o.supplier?.name ?? "supplier"}`}
+                      value={verificationUrl[o._id] ?? ""}
+                      onChange={(event) => setVerificationUrl((current) => ({ ...current, [o._id]: event.target.value }))}
+                      placeholder="https://manufacturer.example/product"
+                      className="input-field min-w-0 flex-1"
+                    />
+                    <button
+                      disabled={pendingOffer === o._id || !verificationUrl[o._id]}
+                      onClick={async () => {
+                        setPendingOffer(o._id);
+                        setVerificationMessage((current) => ({ ...current, [o._id]: "" }));
+                        try {
+                          const result = await verifyOffer({ offerId: o._id, type: "cert", url: verificationUrl[o._id] });
+                          setVerificationMessage((current) => ({ ...current, [o._id]: result.status === "verified" ? "Certification verified" : "Source saved for review; exact authoritative evidence did not match" }));
+                        } catch (cause) {
+                          setVerificationMessage((current) => ({ ...current, [o._id]: cause instanceof Error ? cause.message : "Could not verify source" }));
+                        } finally {
+                          setPendingOffer(null);
+                        }
+                      }}
+                      className="rounded-lg bg-ledger px-3 py-2 text-xs font-medium text-white hover:bg-ledger-deep disabled:opacity-50"
+                    >
+                      {pendingOffer === o._id ? "Checking…" : "Verify"}
+                    </button>
+                  </div>
+                  {verificationMessage[o._id] && <div role="status" className="mt-2 text-[11px] text-soft">{verificationMessage[o._id]}</div>}
+                </div>
+              )}
 
               <div className="mt-3 rounded-lg border border-hairline bg-paper p-3">
                 <div className="eyebrow">Extracted email</div>

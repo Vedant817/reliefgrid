@@ -2,7 +2,6 @@ import { describe, expect, test, vi } from "vitest";
 import {
   awaitingReplyThreads,
   countVerifiedOffers,
-  demoProgress,
   nextStepForWorkspace,
   sendOutreachForNeed,
 } from "./outreach";
@@ -61,21 +60,15 @@ describe("workspace derivations", () => {
   });
 
   test("next step walks the pipeline in order", () => {
-    const base = { hasNeed: true, threadCount: 1, offerCount: 1, verifiedCount: 1, hasPlan: true, planApproved: false };
+    const base = { hasNeed: true, threadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
     expect(nextStepForWorkspace({ ...base, hasNeed: false })).toMatch(/requirement/);
     expect(nextStepForWorkspace({ ...base, threadCount: 0 })).toMatch(/suppliers/);
     expect(nextStepForWorkspace({ ...base, offerCount: 0 })).toMatch(/replies/);
     expect(nextStepForWorkspace({ ...base, verifiedCount: 0 })).toMatch(/evidence/);
+    expect(nextStepForWorkspace({ ...base, verifiedCount: 0, requiresEvidence: false })).toMatch(/approve the plan/);
     expect(nextStepForWorkspace({ ...base, hasPlan: false })).toMatch(/Compute/);
     expect(nextStepForWorkspace(base)).toMatch(/approve the plan/);
     expect(nextStepForWorkspace({ ...base, planApproved: true })).toMatch(/Done/);
-  });
-
-  test("demo progress names the next incomplete step", () => {
-    const { steps, nextIndex } = demoProgress({ hasNeed: true, threadCount: 2, offerCount: 0, verifiedOfferCount: 0 });
-    expect(steps.map((s) => s.label)).toEqual(["Create need", "Send RFQs", "Receive replies", "Verify evidence", "Human approval"]);
-    expect(nextIndex).toBe(2);
-    expect(demoProgress({ hasNeed: true, threadCount: 1, offerCount: 1, verifiedOfferCount: 1, planStatus: "approved" }).nextIndex).toBe(-1);
   });
 
   test("awaiting replies means sent with a provider thread", () => {

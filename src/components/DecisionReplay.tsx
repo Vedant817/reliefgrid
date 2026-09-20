@@ -56,7 +56,7 @@ export function DecisionReplay({ incidentId }: { incidentId?: any }) {
           </div>
         </div>
         <div className="min-h-44 rounded-xl border border-hairline bg-paper p-4">
-          {!snapshot ? <div className="text-sm text-soft">Reload the sample to create replayable events.</div> : (
+          {!snapshot ? <div className="text-sm text-soft">No replayable decision snapshot has been recorded yet.</div> : (
             <>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="font-semibold">{snapshot.need?.item}</div>

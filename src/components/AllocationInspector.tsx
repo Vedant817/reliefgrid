@@ -64,7 +64,7 @@ export function AllocationInspector({ plan, need }: any) {
               {!plan.lines?.length && (
                 <tr>
                   <td colSpan={4} className="px-3 py-6 text-center text-soft">
-                    No lines — allocator rejected all offers (see trace below). The cheapest (BlueRiver $9) loses because it misses the deadline.
+                    No eligible allocation lines. Review the decision trace below to see which constraints rejected each offer.
                   </td>
                 </tr>
               )}
@@ -80,7 +80,7 @@ export function AllocationInspector({ plan, need }: any) {
         )}
 
         <div className="mt-3 text-[11px] leading-relaxed text-soft">
-          Deterministic allocator in <span className="tabular-nums text-ink">convex/lib/allocate.ts</span> — OpenAI extracts, code decides. Cheapest-late (BlueRiver 100×$9) is rejected; 70×$11 + 30×$10 = $1,070 wins.
+          Supplier emails are extracted by the configured language model, but deterministic code applies the quantity, deadline, budget, confidence, and evidence rules. A person must approve the result.
         </div>
       </div>
     </div>
