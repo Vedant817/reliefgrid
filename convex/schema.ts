@@ -41,7 +41,7 @@ export default defineSchema({
     qty: v.number(),
     deadlineAt: v.number(),
     budgetCents: v.number(),
-    certRequired: v.optional(v.string()), // e.g. "NSF/ANSI 53"
+    certRequired: v.optional(v.string()),
     evidenceKey: v.optional(v.string()), // exact product/model/lot identifier expected in external evidence
     partialAllowed: v.boolean(),
     status: v.string(),

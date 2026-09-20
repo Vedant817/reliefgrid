@@ -3,11 +3,24 @@ declare const process: { env: Record<string, string | undefined> };
 export type LlmKind = "groq" | "openai" | "unconfigured";
 
 export type LlmConfig = {
-  kind: LlmKind;
-  baseUrl: string | null;
-  apiKey: string | null;
+  kind: Exclude<LlmKind, "unconfigured">;
+  baseUrl: string;
+  apiKey: string;
   model: string;
 };
+
+export type LlmResolution = LlmConfig | { kind: "unconfigured"; baseUrl: null; apiKey: null; model: string };
+
+export type LlmFailure = { provider: Exclude<LlmKind, "unconfigured">; error: string };
+
+export class LlmProviderError extends Error {
+  constructor(public readonly failures: LlmFailure[]) {
+    super(failures.length
+      ? `LLM providers failed: ${failures.map((failure) => `${failure.provider}: ${failure.error}`).join("; ")}`
+      : "no LLM key configured (OPENAI_API_KEY or GROQ_API_KEY)");
+    this.name = "LlmProviderError";
+  }
+}
 
 export type ExtractedOffer = {
   qty: number | null;
@@ -20,40 +33,63 @@ export type ExtractedOffer = {
   fieldConfidences: { qty: number; price: number; arrival: number; cert: number };
 };
 
-// Resolve the live LLM lane from deployment env. Groq is preferred because it
-// is free and OpenAI-compatible; direct OpenAI works through the same path.
-// Missing credentials are represented explicitly. Callers fail before a
-// provider request and never fabricate an extraction.
-export function resolveLlmProvider(env: Record<string, string | undefined> = process.env): LlmConfig {
-  if (env.GROQ_API_KEY) {
-    return {
-      kind: "groq",
-      baseUrl: "https://api.groq.com/openai/v1",
-      apiKey: env.GROQ_API_KEY,
-      model: env.GROQ_MODEL ?? "openai/gpt-oss-120b",
-    };
+function openaiConfig(env: Record<string, string | undefined>): LlmConfig | null {
+  if (!env.OPENAI_API_KEY) return null;
+  return {
+    kind: "openai",
+    baseUrl: "https://api.openai.com/v1",
+    apiKey: env.OPENAI_API_KEY,
+    model: env.OPENAI_MODEL ?? "gpt-4o-mini",
+  };
+}
+
+function groqConfig(env: Record<string, string | undefined>): LlmConfig | null {
+  if (!env.GROQ_API_KEY) return null;
+  return {
+    kind: "groq",
+    baseUrl: "https://api.groq.com/openai/v1",
+    apiKey: env.GROQ_API_KEY,
+    model: env.GROQ_MODEL ?? "openai/gpt-oss-120b",
+  };
+}
+
+// OpenAI is the primary extraction lane. Groq (GPT-OSS) is a live fallback
+// when OpenAI is missing or the request fails. Callers never fabricate offers.
+export function listLlmProviders(env: Record<string, string | undefined> = process.env): LlmConfig[] {
+  return [openaiConfig(env), groqConfig(env)].filter((config): config is LlmConfig => config !== null);
+}
+
+export function resolveLlmProvider(env: Record<string, string | undefined> = process.env): LlmResolution {
+  return listLlmProviders(env)[0] ?? { kind: "unconfigured", baseUrl: null, apiKey: null, model: "" };
+}
+
+export async function withLlmFallback<T>(args: {
+  providers: LlmConfig[];
+  run: (config: LlmConfig) => Promise<T>;
+}): Promise<{ value: T; provider: LlmConfig; failures: LlmFailure[] }> {
+  if (!args.providers.length) throw new LlmProviderError([]);
+  const failures: LlmFailure[] = [];
+  for (const provider of args.providers) {
+    try {
+      const value = await args.run(provider);
+      return { value, provider, failures };
+    } catch (error) {
+      failures.push({ provider: provider.kind, error: error instanceof Error ? error.message : "unknown provider error" });
+    }
   }
-  if (env.OPENAI_API_KEY) {
-    return {
-      kind: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      apiKey: env.OPENAI_API_KEY,
-      model: env.OPENAI_MODEL ?? "gpt-4o-mini",
-    };
-  }
-  return { kind: "unconfigured", baseUrl: null, apiKey: null, model: "" };
+  throw new LlmProviderError(failures);
 }
 
 export function buildExtractionPrompt(rawBody: string, referenceTimeIso = new Date().toISOString()): { system: string; user: string } {
   const system = [
-    "You extract structured supplier-offer fields from a relief-procurement email.",
+    "You extract structured supplier-offer fields from a procurement email.",
     "Reply with JSON only, no markdown, matching this schema:",
     '{"qty": number|null, "unitPriceCents": number|null, "arrivalAtIso": string|null,',
     ' "certStatus": "verified"|"unverified"|"needs_review", "language": "en"|"es", "conditions": string[], "confidence": 0..1,',
     ' "fieldConfidences": {"qty": 0..1, "price": 0..1, "arrival": 0..1, "cert": 0..1}}',
     "Use null for any value the email does not state clearly. Never guess quantities or prices.",
     `Resolve relative delivery phrases against email receipt time ${referenceTimeIso}. Return an ISO-8601 timestamp with an explicit offset; return null when timezone or time is ambiguous.`,
-    "certStatus is verified only when the email cites a certification such as NSF/ANSI 53.",
+    "certStatus is verified only when the email names a specific certification, standard, or registry. A generic claim that goods are certified is needs_review.",
   ].join(" ");
   return { system, user: rawBody };
 }
@@ -96,7 +132,25 @@ export function parseExtractionJson(text: string): ExtractedOffer | null {
   }
 }
 
-// Minimal OpenAI-compatible chat call (Groq and OpenAI share this shape).
+export async function chatJsonWithFallback(
+  prompt: { system: string; user: string },
+  timeoutMs = 20000,
+  jsonMode = true,
+  env: Record<string, string | undefined> = process.env,
+): Promise<{ requestId: string; content: string; latencyMs: number; provider: Exclude<LlmKind, "unconfigured">; model: string; failures: LlmFailure[] }> {
+  const result = await withLlmFallback({
+    providers: listLlmProviders(env),
+    run: (config) => chatJson(config, prompt, timeoutMs, jsonMode),
+  });
+  return {
+    ...result.value,
+    provider: result.provider.kind,
+    model: result.provider.model,
+    failures: result.failures,
+  };
+}
+
+// Minimal OpenAI-compatible chat call (OpenAI and Groq share this shape).
 // Returns the provider request id plus raw content. Throws on HTTP errors.
 export async function chatJson(
   config: LlmConfig,
@@ -104,7 +158,6 @@ export async function chatJson(
   timeoutMs = 20000,
   jsonMode = true,
 ): Promise<{ requestId: string; content: string; latencyMs: number }> {
-  if (!config.baseUrl || !config.apiKey) throw new Error("no live LLM configured");
   const startedAt = Date.now();
   const res = await fetch(`${config.baseUrl}/chat/completions`, {
     method: "POST",

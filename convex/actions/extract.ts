@@ -1,13 +1,13 @@
 "use node";
 
-import { internalAction } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import {
   buildExtractionPrompt,
-  chatJson,
+  chatJsonWithFallback,
+  LlmProviderError,
   parseExtractionJson,
-  resolveLlmProvider,
   type ExtractedOffer,
 } from "../lib/llm";
 import { MIN_EVIDENCE_CONFIDENCE } from "../lib/allocate";
@@ -20,10 +20,21 @@ function evidenceSpan(match: RegExpMatchArray | null, confidence: number) {
   return { confidence: match ? confidence : 0, start, end: start + quote.length, quote };
 }
 
-// Live-only LLM extraction (Groq preferred, OpenAI supported). There is no
-// fallback lane: missing keys or provider failures throw after recording a failed
-// run. Genuinely ambiguous emails still yield qty 0 / needs_review so the
-// allocator abstains and the clarification flow takes over.
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function certMatchFrom(text: string, certRequired?: string) {
+  if (certRequired?.trim()) {
+    const named = text.match(new RegExp(escapeRegExp(certRequired.trim()).replace(/\s+/g, "\\s+"), "i"));
+    if (named) return named;
+  }
+  return text.match(/certified|certification|certificadas/i);
+}
+
+// Live LLM extraction: OpenAI first, Groq (GPT-OSS) if OpenAI is missing or
+// fails. Missing keys and provider failures throw after recording failed runs.
+// Ambiguous emails yield qty 0 / needs_review so the allocator abstains.
 export const extractOfferFromEmail = internalAction({
   args: {
     needId: v.id("needs"),
@@ -32,7 +43,18 @@ export const extractOfferFromEmail = internalAction({
     rawEmailId: v.string(),
     receivedAt: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<any> => {
+  returns: v.object({
+    qty: v.number(),
+    unitPriceCents: v.number(),
+    arrivalAt: v.number(),
+    certStatus: v.string(),
+    language: v.string(),
+    confidence: v.number(),
+    conditions: v.array(v.string()),
+    providerStatus: v.literal("live"),
+    provider: v.union(v.literal("openai"), v.literal("groq")),
+  }),
+  handler: async (ctx, args) => {
     if (!args.rawBody.trim() || args.rawBody.length > 100_000) throw new Error("Supplier email must be 1-100000 characters");
     const context = await ctx.runQuery(internal.offers.getExtractionContext, {
       needId: args.needId,
@@ -41,27 +63,57 @@ export const extractOfferFromEmail = internalAction({
     await checkLimit(ctx, "extractOffer", String(args.needId));
     const startedAt = Date.now();
     const text = args.rawBody.toLowerCase();
-    const llm = resolveLlmProvider();
-    if (llm.kind === "unconfigured") throw new Error("no LLM key configured (GROQ_API_KEY or OPENAI_API_KEY)");
-
     let parsed: ExtractedOffer;
     let requestId: string;
+    let providerKind: "openai" | "groq" = "openai";
+    let providerModel = "";
     try {
-      const reply = await chatJson(llm, buildExtractionPrompt(args.rawBody, new Date(args.receivedAt ?? Date.now()).toISOString()));
+      const reply = await chatJsonWithFallback(
+        buildExtractionPrompt(args.rawBody, new Date(args.receivedAt ?? Date.now()).toISOString()),
+      );
       const result = parseExtractionJson(reply.content);
       if (!result) throw new Error("unparseable model output");
       parsed = result;
       requestId = reply.requestId;
+      providerKind = reply.provider;
+      providerModel = reply.model;
+      for (const failure of reply.failures) {
+        await recordRun(ctx, {
+          provider: failure.provider,
+          operation: "extract_offer",
+          status: "failed",
+          startedAt,
+          requestId: args.rawEmailId,
+          meta: JSON.stringify({ error: failure.error, fallbackAttempted: true }),
+          ownerId: context.ownerId,
+        });
+      }
     } catch (e) {
-      await recordRun(ctx, {
-        provider: llm.kind,
-        operation: "extract_offer",
-        status: "failed",
-        startedAt,
-        requestId: args.rawEmailId,
-        meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown" }),
-        ownerId: context.ownerId,
-      });
+      const failures = e instanceof LlmProviderError
+        ? e.failures
+        : [{ provider: "openai" as const, error: e instanceof Error ? e.message : "unknown" }];
+      if (!failures.length) {
+        await recordRun(ctx, {
+          provider: "openai",
+          operation: "extract_offer",
+          status: "failed",
+          startedAt,
+          requestId: args.rawEmailId,
+          meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown" }),
+          ownerId: context.ownerId,
+        });
+      }
+      for (const failure of failures) {
+        await recordRun(ctx, {
+          provider: failure.provider,
+          operation: "extract_offer",
+          status: "failed",
+          startedAt,
+          requestId: args.rawEmailId,
+          meta: JSON.stringify({ error: failure.error }),
+          ownerId: context.ownerId,
+        });
+      }
       throw e;
     }
 
@@ -76,10 +128,10 @@ export const extractOfferFromEmail = internalAction({
     let confidence = parsed.confidence;
 
     // Deterministic spans always come from the source text.
-    const qtyMatch = text.match(/(\d+)\s*(filters?|units?|unidades)/i);
+    const qtyMatch = text.match(/(\d[\d,]*)\s*(?:filters?|units?|unidades|pcs?|pieces?|boxes?|kits?|items?|each)?/i);
     const priceMatch = text.match(/\$(\d+(?:\.\d+)?)/);
     const arrivalMatch = text.match(/tomorrow(?: morning)?(?:\s+\d+\s*(?:am|pm))?|\d{4}-\d{2}-\d{2}[^\s,;]*|\d+\s*(?:a\.?m\.?|p\.?m\.?)/i);
-    const certMatch = text.match(/nsf(?:\/ansi)?\s*53|certified|certificadas/i);
+    const certMatch = certMatchFrom(text, context.certRequired);
 
     const fieldEvidence = {
       qty: evidenceSpan(qtyMatch, parsed.fieldConfidences.qty),
@@ -114,15 +166,72 @@ export const extractOfferFromEmail = internalAction({
     }
 
     await recordRun(ctx, {
-      provider: llm.kind,
+      provider: providerKind,
       operation: "extract_offer",
       status: "live",
       startedAt,
       requestId,
-      meta: JSON.stringify({ language, confidence }),
+      meta: JSON.stringify({ language, confidence, model: providerModel, fallback: providerKind === "groq" }),
       ownerId: context.ownerId,
     });
 
-    return { qty, unitPriceCents, arrivalAt, certStatus, language, confidence, conditions, providerStatus: "live" };
+    return { qty, unitPriceCents, arrivalAt, certStatus, language, confidence, conditions, providerStatus: "live" as const, provider: providerKind };
+  },
+});
+
+// Coordinator-pasted quote: same extraction path as inbound email, after an
+// ownership check. The pasted text is real supplier correspondence, not a fixture.
+export const ingestPastedQuote = action({
+  args: {
+    needId: v.id("needs"),
+    supplierId: v.id("suppliers"),
+    rawBody: v.string(),
+  },
+  returns: v.object({
+    qty: v.number(),
+    unitPriceCents: v.number(),
+    arrivalAt: v.number(),
+    certStatus: v.string(),
+    language: v.string(),
+    confidence: v.number(),
+    conditions: v.array(v.string()),
+    providerStatus: v.literal("live"),
+    provider: v.union(v.literal("openai"), v.literal("groq")),
+  }),
+  handler: async (ctx, args): Promise<{
+    qty: number;
+    unitPriceCents: number;
+    arrivalAt: number;
+    certStatus: string;
+    language: string;
+    confidence: number;
+    conditions: string[];
+    providerStatus: "live";
+    provider: "openai" | "groq";
+  }> => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Authentication required");
+    const prepared: { ownerId: string; rawEmailId: string; rawBody: string } = await ctx.runMutation(
+      internal.quotes.preparePastedQuote,
+      args,
+    );
+    const extracted: {
+      qty: number;
+      unitPriceCents: number;
+      arrivalAt: number;
+      certStatus: string;
+      language: string;
+      confidence: number;
+      conditions: string[];
+      providerStatus: "live";
+      provider: "openai" | "groq";
+    } = await ctx.runAction(internal.actions.extract.extractOfferFromEmail, {
+      needId: args.needId,
+      supplierId: args.supplierId,
+      rawBody: prepared.rawBody,
+      rawEmailId: prepared.rawEmailId,
+      receivedAt: Date.now(),
+    });
+    return extracted;
   },
 });

@@ -10,14 +10,18 @@ const fieldEvidence = v.object({ qty: evidenceSpan, price: evidenceSpan, arrival
 
 export const getExtractionContext = internalQuery({
   args: { needId: v.id("needs"), supplierId: v.id("suppliers") },
-  returns: v.object({ ownerId: v.string() }),
+  returns: v.object({
+    ownerId: v.string(),
+    item: v.string(),
+    certRequired: v.optional(v.string()),
+  }),
   handler: async (ctx, args) => {
     const need = await ctx.db.get(args.needId);
     const supplier = await ctx.db.get(args.supplierId);
     if (!need || !supplier) throw new Error("Extraction context not found");
     const incident = await ctx.db.get(need.incidentId);
     if (!incident?.ownerId || !supplierBelongsTo(supplier, incident.ownerId)) throw new Error("Supplier does not belong to the incident owner");
-    return { ownerId: incident.ownerId };
+    return { ownerId: incident.ownerId, item: need.item, certRequired: need.certRequired };
   },
 });
 

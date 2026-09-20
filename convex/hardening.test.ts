@@ -647,3 +647,39 @@ describe("authorization and decision integrity", () => {
   });
 
 });
+
+describe("pasted quotes", () => {
+  test("rejects strangers and short bodies, then is idempotent for the same text", async () => {
+    const raw = makeT();
+    const owner = asUser(raw, "owner-paste");
+    const stranger = asUser(raw, "stranger-paste");
+    const { needId } = await seedNeed(owner);
+    const suppliers: any[] = await seedSuppliers(owner);
+    await expect(
+      stranger.mutation(internal.quotes.preparePastedQuote, {
+        needId,
+        supplierId: suppliers[0]._id,
+        rawBody: "We can deliver 40 chairs at $20 each tomorrow 9am.",
+      }),
+    ).rejects.toThrow();
+    await expect(
+      owner.mutation(internal.quotes.preparePastedQuote, {
+        needId,
+        supplierId: suppliers[0]._id,
+        rawBody: "short",
+      }),
+    ).rejects.toThrow(/8 characters/);
+    const first = await owner.mutation(internal.quotes.preparePastedQuote, {
+      needId,
+      supplierId: suppliers[0]._id,
+      rawBody: "  We can deliver 40 chairs at $20 each tomorrow 9am.  ",
+    });
+    const again = await owner.mutation(internal.quotes.preparePastedQuote, {
+      needId,
+      supplierId: suppliers[0]._id,
+      rawBody: "We can deliver 40 chairs at $20 each tomorrow 9am.",
+    });
+    expect(first.rawEmailId).toBe(again.rawEmailId);
+    expect(first.rawEmailId.startsWith("paste:")).toBe(true);
+  });
+});

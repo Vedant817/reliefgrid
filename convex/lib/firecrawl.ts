@@ -25,10 +25,20 @@ export type SearchHit = {
 // Web search through the official Firecrawl component. Returns normalized
 // hits only — callers decide what counts as evidence and record provider
 // runs themselves, so a search never silently becomes verification.
+function firecrawlFailure(error: unknown, operation: string): never {
+  const detail = error instanceof Error ? error.message : "unknown Firecrawl error";
+  throw new Error(`Firecrawl ${operation} failed: ${detail}`);
+}
+
 export async function searchViaComponent(ctx: any, query: string, limit = 5): Promise<{ hits: SearchHit[]; requestId: string; latencyMs: number }> {
   const startedAt = Date.now();
   const client = new FirecrawlClient(components.firecrawl);
-  const response = await client.search(ctx, query, { sources: ["web"], limit });
+  let response;
+  try {
+    response = await client.search(ctx, query, { sources: ["web"], limit });
+  } catch (error) {
+    firecrawlFailure(error, "search");
+  }
   const raw = [...(response.web ?? []), ...(response.news ?? [])];
   const hits: SearchHit[] = [];
   for (const item of raw) {
@@ -49,7 +59,12 @@ export async function searchViaComponent(ctx: any, query: string, limit = 5): Pr
 export async function scrapeViaComponent(ctx: any, url: string): Promise<ScrapedSource> {
   const startedAt = Date.now();
   const client = new FirecrawlClient(components.firecrawl);
-  const doc = await client.scrape(ctx, url, { formats: ["markdown"], onlyMainContent: true });
+  let doc;
+  try {
+    doc = await client.scrape(ctx, url, { formats: ["markdown"], onlyMainContent: true });
+  } catch (error) {
+    firecrawlFailure(error, "scrape");
+  }
   const markdown = (doc.markdown ?? "").replace(/\s+/g, " ").trim();
   if (!markdown) throw new Error("Firecrawl returned empty content");
   return {

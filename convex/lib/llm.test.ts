@@ -1,19 +1,47 @@
 import { describe, expect, it } from "vitest";
-import { buildExtractionPrompt, parseExtractionJson, resolveLlmProvider } from "./llm";
+import {
+  buildExtractionPrompt,
+  listLlmProviders,
+  parseExtractionJson,
+  resolveLlmProvider,
+  withLlmFallback,
+} from "./llm";
 
 describe("resolveLlmProvider", () => {
-  it("prefers Groq when its key is present", () => {
-    expect(resolveLlmProvider({ GROQ_API_KEY: "gsk-test" }).kind).toBe("groq");
-  });
-
-  it("uses OpenAI when only its key is present", () => {
-    const config = resolveLlmProvider({ OPENAI_API_KEY: "sk-test" });
+  it("prefers OpenAI when both keys are present", () => {
+    const config = resolveLlmProvider({ OPENAI_API_KEY: "sk-test", GROQ_API_KEY: "gsk-test" });
     expect(config.kind).toBe("openai");
     expect(config.baseUrl).toBe("https://api.openai.com/v1");
+    expect(config.model).toBe("gpt-4o-mini");
+  });
+
+  it("uses Groq when only its key is present", () => {
+    const config = resolveLlmProvider({ GROQ_API_KEY: "gsk-test" });
+    expect(config.kind).toBe("groq");
+    expect(config.baseUrl).toBe("https://api.groq.com/openai/v1");
+    expect(config.model).toBe("openai/gpt-oss-120b");
+  });
+
+  it("lists OpenAI then Groq for live fallback", () => {
+    expect(listLlmProviders({ OPENAI_API_KEY: "sk-test", GROQ_API_KEY: "gsk-test" }).map((item) => item.kind))
+      .toEqual(["openai", "groq"]);
   });
 
   it("reports an unconfigured provider with no keys", () => {
     expect(resolveLlmProvider({}).kind).toBe("unconfigured");
+  });
+
+  it("falls back to Groq when OpenAI throws", async () => {
+    const result = await withLlmFallback({
+      providers: listLlmProviders({ OPENAI_API_KEY: "sk-test", GROQ_API_KEY: "gsk-test" }),
+      run: async (config) => {
+        if (config.kind === "openai") throw new Error("OpenAI HTTP 429");
+        return `ok:${config.kind}`;
+      },
+    });
+    expect(result.value).toBe("ok:groq");
+    expect(result.provider.kind).toBe("groq");
+    expect(result.failures).toEqual([{ provider: "openai", error: "OpenAI HTTP 429" }]);
   });
 });
 

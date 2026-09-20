@@ -18,6 +18,7 @@ export const discoverSuppliers = action({
   returns: v.object({
     suppliers: v.array(v.object({ name: v.string(), url: v.string(), snippet: v.string() })),
     providerStatus: v.literal("live"),
+    provider: v.union(v.literal("firecrawl"), v.literal("exa")),
   }),
   handler: async (ctx, args) => {
     const access: any = await ctx.runQuery(internal.needs.getNeedOwnership, { needId: args.needId });
@@ -65,6 +66,6 @@ export const discoverSuppliers = action({
       meta: JSON.stringify({ results: suppliers.length, fallback: retrieval.provider === "exa" }),
       ownerId,
     });
-    return { suppliers, providerStatus: "live" as const };
+    return { suppliers, providerStatus: "live" as const, provider: retrieval.provider };
   },
 });

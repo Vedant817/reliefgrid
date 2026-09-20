@@ -89,13 +89,13 @@ export const getProviderHealth = query({
       {
         provider: "openai",
         status: hasOpenAI ? statusFor(openaiRun) : "not_configured",
-        detail: hasOpenAI ? (openaiRun ? "configured; run evidence below" : "configured; no run verified") : "not configured",
+        detail: hasOpenAI ? (openaiRun ? "primary LLM; run evidence below" : "primary LLM; no run verified") : "not configured",
         lastRun: openaiRun,
       },
       {
         provider: "groq",
         status: hasGroq ? statusFor(groqRun) : "not_configured",
-        detail: hasGroq ? (groqRun ? "configured; run evidence below" : "configured; no run verified") : "not configured",
+        detail: hasGroq ? (groqRun ? "OpenAI fallback; run evidence below" : "OpenAI fallback; no run verified") : "not configured",
         lastRun: groqRun,
       },
       {

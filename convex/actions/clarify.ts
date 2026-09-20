@@ -4,7 +4,7 @@ import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
-import { chatJson, resolveLlmProvider } from "../lib/llm";
+import { chatJsonWithFallback, LlmProviderError } from "../lib/llm";
 import { MIN_EVIDENCE_CONFIDENCE } from "../lib/allocate";
 import { recordRun } from "../lib/runs";
 import { replyAgentMailMessage, resolveAgentMail } from "../lib/agentmail";
@@ -47,54 +47,79 @@ export const draftClarification = action({
     question: v.string(),
     unresolved: v.array(v.string()),
     providerStatus: v.literal("live"),
+    provider: v.union(v.literal("openai"), v.literal("groq")),
   }),
-  handler: async (ctx, args): Promise<{ question: string; unresolved: string[]; providerStatus: "live" }> => {
+  handler: async (ctx, args): Promise<{ question: string; unresolved: string[]; providerStatus: "live"; provider: "openai" | "groq" }> => {
     const startedAt = Date.now();
     const offer = await ctx.runQuery(api.offers.getOfferForVerification, { offerId: args.offerId });
     if (!offer) throw new Error("Offer not found");
     await checkLimit(ctx, "draftClarification", String(args.offerId), offer.ownerId);
     const unresolved = unresolvedFields(offer);
     if (unresolved.length === 0) throw new Error("This offer does not need clarification");
-    const llm = resolveLlmProvider();
-    if (llm.kind === "unconfigured") throw new Error("no LLM key configured (GROQ_API_KEY or OPENAI_API_KEY)");
     let reply;
     try {
-      reply = await chatJson(
-        llm,
+      reply = await chatJsonWithFallback(
         {
           system:
-            "You write one short supplier-clarification question for emergency procurement. " +
+            "You write one short supplier-clarification question for a purchase. " +
             "Ask ONLY about the listed unresolved details, naming each explicitly. Plain text, no greeting, no markdown.",
           user: `Unresolved offer details: ${unresolved.join(", ")}.`,
         },
         20000,
         false,
       );
+      for (const failure of reply.failures) {
+        await recordRun(ctx, {
+          provider: failure.provider,
+          operation: "draft_targeted_clarification",
+          status: "failed",
+          startedAt,
+          requestId: String(args.offerId),
+          meta: JSON.stringify({ error: failure.error, fallbackAttempted: true }),
+          ownerId: offer.ownerId,
+        });
+      }
     } catch (e) {
-      await recordRun(ctx, {
-        provider: llm.kind,
-        operation: "draft_targeted_clarification",
-        status: "failed",
-        startedAt,
-        requestId: String(args.offerId),
-        meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown" }),
-        ownerId: offer.ownerId,
-      });
+      const failures = e instanceof LlmProviderError
+        ? e.failures
+        : [{ provider: "openai" as const, error: e instanceof Error ? e.message : "unknown" }];
+      if (!failures.length) {
+        await recordRun(ctx, {
+          provider: "openai",
+          operation: "draft_targeted_clarification",
+          status: "failed",
+          startedAt,
+          requestId: String(args.offerId),
+          meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown" }),
+          ownerId: offer.ownerId,
+        });
+      }
+      for (const failure of failures) {
+        await recordRun(ctx, {
+          provider: failure.provider,
+          operation: "draft_targeted_clarification",
+          status: "failed",
+          startedAt,
+          requestId: String(args.offerId),
+          meta: JSON.stringify({ error: failure.error }),
+          ownerId: offer.ownerId,
+        });
+      }
       throw e;
     }
     const question = reply.content.trim();
     if (!question) throw new Error("empty clarification from model");
     await recordRun(ctx, {
-      provider: llm.kind,
+      provider: reply.provider,
       operation: "draft_targeted_clarification",
       status: "live",
       startedAt,
       latencyMs: reply.latencyMs,
       requestId: reply.requestId,
-      meta: JSON.stringify({ unresolved }),
+      meta: JSON.stringify({ unresolved, model: reply.model, fallback: reply.provider === "groq" }),
       ownerId: offer.ownerId,
     });
-    return { question, unresolved, providerStatus: "live" as const };
+    return { question, unresolved, providerStatus: "live" as const, provider: reply.provider };
   },
 });
 

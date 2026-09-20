@@ -82,6 +82,8 @@ export const getNeedWorkspace = query({
       offersByNeed.sum(ctx, { namespace: args.needId }),
     ]);
 
+    const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", args.needId)).first();
+
     return {
       need,
       incident: { _id: incident._id, title: incident.title, status: incident.status, deadlineAt: incident.deadlineAt },
@@ -90,6 +92,7 @@ export const getNeedWorkspace = query({
       latestPlan,
       coverage: { offerCount, totalQty },
       verifiedOfferCount: offers.filter((o) => o.verified).length,
+      inbox: inbox ? { email: inbox.email, inboxId: inbox.inboxId } : null,
     };
   },
 });
