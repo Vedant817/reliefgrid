@@ -24,7 +24,7 @@ export function NewIncidentForm({ onCancel, onCreate }: { onCancel: () => void; 
   const [error, setError] = useState<string | null>(null);
   const [items, setItems] = useState<LineItem[]>([blankItem()]);
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink/50 p-4" role="dialog" aria-modal="true" aria-label="Create urgent requirement">
+    <div className="fixed inset-0 z-50 grid place-items-center overflow-y-auto bg-ink/50 p-4" role="dialog" aria-modal="true" aria-label="Create requirement">
       <form
         className="my-8 w-full max-w-2xl rounded-xl border border-hairline bg-sheet p-6"
         onSubmit={async (event) => {
@@ -55,18 +55,18 @@ export function NewIncidentForm({ onCancel, onCreate }: { onCancel: () => void; 
           }
         }}
       >
-        <div className="text-[13px] font-semibold text-ledger">New urgent requirement</div>
+        <div className="text-[13px] font-semibold text-ledger">New requirement</div>
         <h2 className="mt-2 font-serif text-[26px] font-bold tracking-tight">What must arrive, where, and by when?</h2>
-        <p className="mt-1 text-sm text-soft">ReliefGrid will prepare comparable supplier outreach. Nothing is sent without approval.</p>
+        <p className="mt-1 text-sm text-soft">ReliefGrid prepares comparable outreach. Nothing is sent without your approval.</p>
         <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <label className="text-xs font-medium text-soft md:col-span-2">Incident name<input required name="title" placeholder="Urgent equipment procurement" className="input-field mt-1" /></label>
-          <label className="text-xs font-medium text-soft md:col-span-2">Operational context<textarea name="description" placeholder="Residents affected, access constraints, substitution rules" className="input-field mt-1 min-h-20" /></label>
+          <label className="text-xs font-medium text-soft md:col-span-2">Requirement name<input required name="title" placeholder="Requirement name" className="input-field mt-1" /></label>
+          <label className="text-xs font-medium text-soft md:col-span-2">Context<textarea name="description" placeholder="Who needs this, access constraints, substitutions you will accept" className="input-field mt-1 min-h-20" /></label>
         </div>
         <div className="mt-4 space-y-3">
           <div className="eyebrow">Line items — one request per row</div>
           {items.map((_row, index) => (
             <div key={index} className="grid gap-3 rounded-lg border border-hairline bg-paper p-3 md:grid-cols-[1fr_110px_130px_auto]">
-              <label className="text-xs font-medium text-soft">Item<input required name={`item-${index}`} placeholder={index === 0 ? "Portable water filters" : "Item name"} className="input-field mt-1" /></label>
+              <label className="text-xs font-medium text-soft">Item<input required name={`item-${index}`} placeholder="Item name" className="input-field mt-1" /></label>
               <label className="text-xs font-medium text-soft">Quantity<input required min="1" step="1" type="number" name={`qty-${index}`} className="input-field mt-1" /></label>
               <label className="text-xs font-medium text-soft">Budget, USD<input required min="0" step="0.01" type="number" name={`budget-${index}`} className="input-field mt-1" /></label>
               {items.length > 1 ? (
@@ -84,9 +84,9 @@ export function NewIncidentForm({ onCancel, onCreate }: { onCancel: () => void; 
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
           <label className="text-xs font-medium text-soft">Required arrival<input required type="datetime-local" name="deadline" className="input-field mt-1" /></label>
-          <label className="text-xs font-medium text-soft">Required certification<input name="certification" placeholder="NSF/ANSI 53" className="input-field mt-1" /></label>
-          <label className="text-xs font-medium text-soft">Product/model evidence key<input name="evidenceKey" placeholder="Model NF-53 or lot A17" className="input-field mt-1" /></label>
-          <label className="text-xs font-medium text-soft">Delivery location<input required name="location" placeholder="North District shelter receiving" className="input-field mt-1" /></label>
+          <label className="text-xs font-medium text-soft">Required certification<input name="certification" placeholder="Exact certification or standard, if any" className="input-field mt-1" /></label>
+          <label className="text-xs font-medium text-soft">Product or model identifier<input name="evidenceKey" placeholder="Exact model, SKU, or lot used in evidence" className="input-field mt-1" /></label>
+          <label className="text-xs font-medium text-soft">Delivery location<input required name="location" placeholder="Delivery address or receiving point" className="input-field mt-1" /></label>
         </div>
         {error && <div className="mt-4 rounded-lg border border-[#edc4b6] bg-[#f9ece7] p-3 text-sm text-seal">{error}</div>}
         <div className="mt-6 flex justify-end gap-2">

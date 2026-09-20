@@ -11,7 +11,7 @@ export function CounterfactualLab({ needId }: { needId?: any }) {
   );
 
   return (
-    <section className="card overflow-hidden">
+    <section className="overflow-hidden">
       <div className="flex justify-between gap-3 border-b border-hairline px-4 py-3">
         <div>
           <div className="eyebrow">What-if scenarios</div>

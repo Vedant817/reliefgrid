@@ -37,7 +37,7 @@ export function PublicRecallCheck({ needId, coverage, target }: PublicRecallChec
   };
 
   return (
-    <section className="card p-4">
+    <section>
       <div className="eyebrow">Public recall watch</div>
       <p className="mt-1 text-xs leading-relaxed text-soft">
         Firecrawl checks public recall sources first, with Exa fallback. A confirmed match freezes the affected offers and drafts a hold notice.

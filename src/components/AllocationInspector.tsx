@@ -1,13 +1,13 @@
 import { formatCents, friendlyReason, humanizeStatus } from "../lib/format";
 
-export function AllocationInspector({ plan, need }: any) {
-  if (!need) return <div className="card p-6 text-sm text-soft">Create a need to compute allocation.</div>;
+export function AllocationInspector({ plan, need, includeTrace = false }: any) {
+  if (!need) return <div className="card p-6 text-sm text-soft">Create a requirement to compute a recommendation.</div>;
   if (!plan) {
     return (
       <div className="card p-6">
-        <div className="text-sm font-semibold">Allocation Inspector</div>
-        <div className="mt-1 text-sm text-soft">No plan yet. The allocator needs at least one verified offer before it can propose a cheapest-feasible split.</div>
-        <div className="mt-3 text-xs tabular-nums text-soft">Constraints: qty ≥ {need.qty}, deadline {new Date(need.deadlineAt).toLocaleTimeString()}, budget {formatCents(need.budgetCents)}, cert {need.certRequired}</div>
+        <div className="text-sm font-semibold">Recommendation</div>
+        <div className="mt-1 text-sm text-soft">No plan yet. Eligible quotes are required before a cheapest-feasible split can be proposed.</div>
+        <div className="mt-3 text-xs tabular-nums text-soft">Constraints: qty ≥ {need.qty}, deadline {new Date(need.deadlineAt).toLocaleTimeString()}, budget {formatCents(need.budgetCents)}{need.certRequired ? `, cert ${need.certRequired}` : ""}</div>
       </div>
     );
   }
@@ -17,7 +17,7 @@ export function AllocationInspector({ plan, need }: any) {
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
-        <div className="eyebrow">Allocation Inspector</div>
+        <div className="eyebrow">Recommendation</div>
         <span key={isApproved ? "approved" : "proposed"} className={`stamp ${isApproved ? "seal-in border-ledger bg-[#eaf2ed] text-ledger" : "border-[#e7d9ae] bg-[#fbf7ea] text-[#7a5c14]"}`}>
           {isApproved ? "Approved" : "Proposed"}
         </span>
@@ -72,12 +72,12 @@ export function AllocationInspector({ plan, need }: any) {
           </table>
         </div>
 
-        {plan.decisionTrace && (
-          <div className="mt-3 rounded-lg border border-hairline bg-paper p-3">
-            <div className="eyebrow">Decision trace (deterministic)</div>
+        {plan.decisionTrace && includeTrace ? (
+          <details className="mt-3 rounded-lg border border-hairline bg-paper p-3">
+            <summary className="cursor-pointer text-xs font-semibold text-ink">Technical trace</summary>
             <pre className="mt-2 whitespace-pre-wrap text-[11px] tabular-nums leading-relaxed text-soft">{plan.decisionTrace}</pre>
-          </div>
-        )}
+          </details>
+        ) : null}
 
         <div className="mt-3 text-[11px] leading-relaxed text-soft">
           Supplier emails are extracted by the configured language model, but deterministic code applies the quantity, deadline, budget, confidence, and evidence rules. A person must approve the result.

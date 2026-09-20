@@ -20,6 +20,7 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
   const [finding, setFinding] = useState(false);
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<DiscoveredSupplier[] | null>(null);
+  const [searchProvider, setSearchProvider] = useState<"firecrawl" | "exa" | null>(null);
   const [prefill, setPrefill] = useState<{ name: string; key: number } | null>(null);
 
   const awaitingReply = awaitingReplyThreads(threads);
@@ -37,9 +38,9 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
     try {
       const result = await sendOutreachForNeed(outreachDeps, String(needId), [String(supplierId)]);
       if (result.errors.length && result.sent === 0 && result.deduped === 0) setMessage(result.errors[0]);
-      else setMessage(result.deduped > 0 && result.sent === 0 ? "RFQ was already sent" : "RFQ sent and tracked");
+      else setMessage(result.deduped > 0 && result.sent === 0 ? "Request was already sent" : "Request sent and tracked");
     } catch (cause) {
-      setMessage(cause instanceof Error ? cause.message : "Could not send RFQ");
+      setMessage(cause instanceof Error ? cause.message : "Could not send request");
     } finally {
       setBusyId(null);
     }
@@ -61,7 +62,7 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
         sent += result.sent + result.deduped;
         problems.push(...result.errors);
       }
-      setMessage(`Sent ${sent} RFQ${sent === 1 ? "" : "s"} across ${needs.length} request${needs.length === 1 ? "" : "s"}${problems.length ? `, ${problems.length} need${problems.length === 1 ? "s" : ""} attention: ${problems[0]}` : ""}`);
+      setMessage(`Sent ${sent} request${sent === 1 ? "" : "s"} across ${needs.length} item${needs.length === 1 ? "" : "s"}${problems.length ? `, ${problems.length} need${problems.length === 1 ? "s" : ""} attention: ${problems[0]}` : ""}`);
     } finally {
       setSendingAll(false);
     }
@@ -87,7 +88,8 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
     try {
       const res = await discover({ needId });
       setResults(res.suppliers);
-      setMessage(res.suppliers.length ? `${res.suppliers.length} supplier candidates found — add a real contact email to invite one` : "No supplier candidates found for this item");
+      setSearchProvider(res.provider);
+      setMessage(res.suppliers.length ? `${res.suppliers.length} supplier candidates found via ${res.provider === "exa" ? "Exa" : "Firecrawl"} — add a real contact email to invite one` : "No supplier candidates found for this item");
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "Could not search for suppliers");
     } finally {
@@ -96,16 +98,23 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
   };
 
   return (
-    <section className="card p-4">
+    <section>
       <div>
-        <div className="eyebrow">Supplier outreach</div>
-        <div className="mt-1 text-xs text-soft">Add a real supplier, then explicitly approve each RFQ.</div>
+        <div className="text-sm font-semibold">Suppliers</div>
+        <div className="mt-1 text-sm text-soft">Add a contact, then approve each request. Nothing is emailed until you do.</div>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-1.5">
         <button onClick={() => setFinding((value) => !value)} className="whitespace-nowrap rounded-lg border border-hairline px-2.5 py-1.5 text-xs font-medium text-ledger hover:bg-paper">
           {finding ? "Hide search" : "Find suppliers"}
         </button>
-        <button onClick={() => setAdding((value) => !value)} className="whitespace-nowrap rounded-lg border border-hairline px-2.5 py-1.5 text-xs font-medium text-ledger hover:bg-paper">
+        <button
+          onClick={() => setAdding((value) => !value)}
+          className={
+            adding || suppliers.length
+              ? "whitespace-nowrap rounded-lg border border-hairline px-2.5 py-1.5 text-xs font-medium text-ledger hover:bg-paper"
+              : "whitespace-nowrap rounded-lg bg-ledger px-2.5 py-1.5 text-xs font-medium text-white hover:bg-ledger-deep"
+          }
+        >
           {adding ? "Cancel" : "Add supplier"}
         </button>
       </div>
@@ -126,7 +135,10 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
 
       {finding && (
         <div className="mt-4 rounded-lg border border-hairline bg-paper p-3">
-          <div className="text-xs text-soft">Firecrawl searches first, with Exa fallback when unavailable. Each search is a billable provider call; adding a candidate still needs a real contact email.</div>
+          <div className="text-xs text-soft">
+            Searches the public web for suppliers of this item (Firecrawl, then Exa if Firecrawl is unavailable). Adding a candidate still needs a real contact email.
+            {searchProvider ? ` Last search used ${searchProvider === "exa" ? "Exa" : "Firecrawl"}.` : ""}
+          </div>
           <button
             disabled={!needId || searching}
             onClick={() => void handleSearch()}
@@ -201,7 +213,7 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
                 onClick={() => void handleSend(supplier._id)}
                 className="mt-2 w-full rounded-lg bg-ledger px-2 py-1.5 text-xs font-medium text-white hover:bg-ledger-deep disabled:cursor-not-allowed disabled:bg-[#e7e2d3] disabled:text-soft"
               >
-                {pending ? "Sending…" : thread?.agentmailMessageId ? `RFQ ${thread.status}` : "Approve & send RFQ"}
+                {pending ? "Sending…" : thread?.agentmailMessageId ? `Request ${thread.status}` : "Approve & send request"}
               </button>
               {canRemind && (
                 <button

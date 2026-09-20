@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { formatCents, formatDate, humanizeStatus } from "../lib/format";
+import { PasteQuote } from "./PasteQuote";
 
 function EvidenceAttach({ offerId }: { offerId: any }) {
   const attachments: any = useQuery(api.attachments.listAttachmentsByOffer, { offerId }) ?? [];
@@ -71,7 +72,7 @@ function Badge({ children, tone }: any) {
   return <span className={`rounded-[4px] border px-2 py-0.5 text-[11px] font-semibold ${map[tone] ?? map.neutral}`}>{children}</span>;
 }
 
-export function OfferMatrix({ offers, coverage }: any) {
+export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId, suppliers }: any) {
   const draftClarification = useAction(api.actions.clarify.draftClarification);
   const sendClarification = useAction(api.actions.clarify.approveAndSendClarification);
   const verifyOffer = useAction(api.actions.verify.verifyOffer);
@@ -86,8 +87,16 @@ export function OfferMatrix({ offers, coverage }: any) {
   if (!offers.length) {
     return (
       <div className="card p-6">
-        <div className="text-sm font-semibold">Live Offer Matrix</div>
-        <div className="mt-1 text-sm text-soft">No offers yet. Add a supplier and approve an RFQ to begin collecting comparable replies.</div>
+        <div className="text-sm font-semibold">Quotes</div>
+        <div className="mt-1 text-sm text-soft">
+          No quotes yet. Send a request, wait for a reply, or paste a quote you already received.
+        </div>
+        {inboxEmail && (
+          <p className="mt-3 rounded-lg border border-hairline bg-paper px-3 py-2 text-xs tabular-nums text-soft">
+            Request inbox: <span className="font-medium text-ink">{inboxEmail}</span>
+          </p>
+        )}
+        <PasteQuote needId={needId} suppliers={suppliers ?? []} />
       </div>
     );
   }
@@ -98,12 +107,17 @@ export function OfferMatrix({ offers, coverage }: any) {
 
   return (
     <div className="card overflow-hidden">
-      <div className="flex items-center justify-between border-b border-hairline px-4 py-3">
-        <div className="eyebrow">Live Offer Matrix</div>
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-hairline px-4 py-3">
+        <div className="eyebrow">Quotes</div>
         <span className="flex items-center gap-2 text-xs tabular-nums text-soft">
-          {offers.length} offers, {coverage?.totalQty ?? "?"} units quoted, realtime
+          {offers.length} offers, {coverage?.totalQty ?? "?"} units quoted
         </span>
       </div>
+      {inboxEmail ? (
+        <p className="border-b border-hairline bg-paper px-4 py-2 text-xs tabular-nums text-soft">
+          Request inbox: <span className="font-medium text-ink">{inboxEmail}</span>
+        </p>
+      ) : null}
 
       <div className="divide-y divide-hairline">
         {sorted.map((o: any) => {
@@ -125,7 +139,7 @@ export function OfferMatrix({ offers, coverage }: any) {
               </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {isVerified ? <Badge tone="verified">NSF/ANSI 53 verified</Badge> : <Badge tone="review">{humanizeStatus(o.certStatus)}</Badge>}
+                {isVerified ? <Badge tone="verified">{certRequired ? `${certRequired} verified` : "Evidence verified"}</Badge> : <Badge tone="review">{humanizeStatus(o.certStatus)}</Badge>}
                 {isLate ? <Badge tone="late">Late — {formatDate(o.arrivalAt)}</Badge> : <Badge tone="neutral">{formatDate(o.arrivalAt)}</Badge>}
                 <Badge tone={o.confidence > 0.9 ? "verified" : "review"}>{(o.confidence * 100).toFixed(0)}% confidence</Badge>
                 {o.conditions?.map((c: string, i: number) => (
@@ -154,7 +168,7 @@ export function OfferMatrix({ offers, coverage }: any) {
                         try {
                           const result = await draftClarification({ offerId: o._id });
                           setDrafts((current) => ({ ...current, [o._id]: result.question }));
-                          setDraftStatus((current) => ({ ...current, [o._id]: result.providerStatus }));
+                          setDraftStatus((current) => ({ ...current, [o._id]: result.provider }));
                         } catch (cause) {
                           setClarificationError((current) => ({ ...current, [o._id]: cause instanceof Error ? cause.message : "Could not draft clarification" }));
                         } finally {
@@ -170,7 +184,7 @@ export function OfferMatrix({ offers, coverage }: any) {
                     <div className="mt-2">
                       <p className="text-xs text-ink">{drafts[o._id]}</p>
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="text-[10px] tabular-nums text-soft">LLM: {draftStatus[o._id] ?? "live"}</span>
+                        <span className="text-[10px] tabular-nums text-soft">LLM: {draftStatus[o._id] === "groq" ? "Groq (GPT-OSS)" : draftStatus[o._id] === "openai" ? "OpenAI" : "live"}</span>
                         <button
                            disabled={sent[o._id] || pendingOffer === o._id}
                            onClick={async () => {
@@ -196,7 +210,7 @@ export function OfferMatrix({ offers, coverage }: any) {
               )}
               {clarificationError[o._id] && <div role="alert" className="mt-2 text-[11px] text-seal">{clarificationError[o._id]}</div>}
 
-              {!o.isVerified && (
+              {!o.isVerified && certRequired && (
                 <div className="mt-3 rounded-lg border border-hairline bg-paper p-3">
                   <div className="eyebrow">Independent certification check</div>
                   <p className="mt-1 text-[11px] leading-relaxed text-soft">Paste an authoritative HTTPS page that contains both the required certification and the exact product or model identifier.</p>
@@ -238,21 +252,31 @@ export function OfferMatrix({ offers, coverage }: any) {
                 {o.sourceChecks?.length ? (
                   <div className="mt-2 flex flex-wrap gap-1.5">
                     {o.sourceChecks.slice(0, 2).map((s: any) => (
-                      <span key={s._id} className="rounded-md border border-[#bfd9c9] bg-[#eaf2ed] px-2 py-0.5 text-[11px] tabular-nums text-ledger">
-                        {s.type}: {s.status} — {s.quote.slice(0, 40)}…
-                      </span>
+                      <a
+                        key={s._id}
+                        href={s.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="rounded-md border border-[#bfd9c9] bg-[#eaf2ed] px-2 py-0.5 text-[11px] text-ledger underline-offset-2 hover:underline"
+                      >
+                        {s.type}: {s.status} — {s.quote.slice(0, 80)}
+                      </a>
                     ))}
                   </div>
                 ) : null}
-                <EvidenceAttach offerId={o._id} />
+                {certRequired ? <EvidenceAttach offerId={o._id} /> : null}
               </div>
             </div>
           );
         })}
       </div>
 
-      <div className="border-t border-hairline bg-paper px-4 py-3 text-[11px] tabular-nums text-soft">
-        Convex realtime: <span className="text-ink">useQuery(listOffersByNeed)</span> updates without refresh, web evidence checks stored as <span className="text-ink">sourceChecks</span>, live LLM extraction confidence shown per row
+      <div className="border-t border-hairline bg-paper px-4 py-3">
+        <p className="text-[11px] text-soft">Quotes update live as supplier replies are ingested.</p>
+        <details className="mt-2">
+          <summary className="cursor-pointer text-xs font-semibold text-ink">Paste another quote</summary>
+          <PasteQuote needId={needId} suppliers={suppliers ?? []} />
+        </details>
       </div>
     </div>
   );

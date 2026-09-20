@@ -2,6 +2,8 @@ import { describe, expect, test, vi } from "vitest";
 import {
   awaitingReplyThreads,
   countVerifiedOffers,
+  flowStepAvailable,
+  flowStepForWorkspace,
   nextStepForWorkspace,
   sendOutreachForNeed,
 } from "./outreach";
@@ -60,15 +62,37 @@ describe("workspace derivations", () => {
   });
 
   test("next step walks the pipeline in order", () => {
-    const base = { hasNeed: true, threadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
+    const base = { hasNeed: true, supplierCount: 1, threadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
     expect(nextStepForWorkspace({ ...base, hasNeed: false })).toMatch(/requirement/);
-    expect(nextStepForWorkspace({ ...base, threadCount: 0 })).toMatch(/suppliers/);
-    expect(nextStepForWorkspace({ ...base, offerCount: 0 })).toMatch(/replies/);
+    expect(nextStepForWorkspace({ ...base, supplierCount: 0, threadCount: 0, offerCount: 0 })).toMatch(/Add a supplier/);
+    expect(nextStepForWorkspace({ ...base, offerCount: 0 })).toMatch(/paste a quote/);
     expect(nextStepForWorkspace({ ...base, verifiedCount: 0 })).toMatch(/evidence/);
     expect(nextStepForWorkspace({ ...base, verifiedCount: 0, requiresEvidence: false })).toMatch(/approve the plan/);
-    expect(nextStepForWorkspace({ ...base, hasPlan: false })).toMatch(/Compute/);
+    expect(nextStepForWorkspace({ ...base, hasPlan: false })).toMatch(/recommendation/);
     expect(nextStepForWorkspace(base)).toMatch(/approve the plan/);
     expect(nextStepForWorkspace({ ...base, planApproved: true })).toMatch(/Done/);
+  });
+
+  test("flow step follows the same pipeline as next-step copy", () => {
+    const base = { hasNeed: true, supplierCount: 1, threadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
+    expect(flowStepForWorkspace({ ...base, hasNeed: false })).toBe("requirement");
+    expect(flowStepForWorkspace({ ...base, supplierCount: 0, threadCount: 0, offerCount: 0 })).toBe("suppliers");
+    expect(flowStepForWorkspace({ ...base, offerCount: 0 })).toBe("quotes");
+    expect(flowStepForWorkspace({ ...base, verifiedCount: 0 })).toBe("quotes");
+    expect(flowStepForWorkspace({ ...base, verifiedCount: 0, requiresEvidence: false })).toBe("decide");
+    expect(flowStepForWorkspace({ ...base, hasPlan: false })).toBe("decide");
+    expect(flowStepForWorkspace(base)).toBe("decide");
+    expect(flowStepForWorkspace({ ...base, planApproved: true })).toBe("decide");
+  });
+
+  test("quotes are available after a supplier is added, decide after eligible quotes", () => {
+    const none = { hasNeed: false, supplierCount: 0, threadCount: 0, offerCount: 0, verifiedCount: 0, requiresEvidence: false, hasPlan: false, planApproved: false };
+    expect(flowStepAvailable("requirement", none)).toBe(true);
+    expect(flowStepAvailable("suppliers", none)).toBe(false);
+    expect(flowStepAvailable("quotes", { ...none, hasNeed: true })).toBe(false);
+    expect(flowStepAvailable("quotes", { ...none, hasNeed: true, supplierCount: 1 })).toBe(true);
+    expect(flowStepAvailable("decide", { ...none, hasNeed: true, offerCount: 1 })).toBe(true);
+    expect(flowStepAvailable("decide", { ...none, hasNeed: true, offerCount: 1, requiresEvidence: true, verifiedCount: 0 })).toBe(false);
   });
 
   test("awaiting replies means sent with a provider thread", () => {

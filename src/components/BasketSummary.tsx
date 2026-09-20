@@ -17,12 +17,10 @@ export function BasketSummary({ incidentId }: { incidentId?: any }) {
   const budget = needs.reduce((sum: number, n: any) => sum + (n.budgetCents ?? 0), 0);
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 pt-4 lg:px-6">
-      <div className="card flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
-        <span className="eyebrow">Basket</span>
-        <span className="font-serif text-lg font-bold tabular-nums">{covered} of {coverage.totals.needs} items fully covered</span>
-        <span className="text-sm tabular-nums text-soft">{formatCents(plannedCost)} planned of {formatCents(budget)}</span>
-      </div>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 rounded-[10px] border border-hairline bg-sheet px-4 py-3">
+      <span className="eyebrow">Basket</span>
+      <span className="font-serif text-lg font-bold tabular-nums">{covered} of {coverage.totals.needs} items fully covered</span>
+      <span className="text-sm tabular-nums text-soft">{formatCents(plannedCost)} planned of {formatCents(budget)}</span>
     </div>
   );
 }

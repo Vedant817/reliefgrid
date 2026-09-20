@@ -35,7 +35,7 @@ export function DecisionReplay({ incidentId }: { incidentId?: any }) {
   const snapshot = replay?.snapshot;
 
   return (
-    <section className="card overflow-hidden">
+    <section className="overflow-hidden">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-hairline px-5 py-4">
         <div>
           <div className="eyebrow">Decision history</div>

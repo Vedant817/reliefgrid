@@ -59,22 +59,60 @@ export function countVerifiedOffers(
   ).length;
 }
 
-export function nextStepForWorkspace(args: {
+export type WorkspaceFlowStep = "requirement" | "suppliers" | "quotes" | "decide";
+
+export const WORKSPACE_FLOW_STEPS: { id: WorkspaceFlowStep; label: string }[] = [
+  { id: "requirement", label: "Requirement" },
+  { id: "suppliers", label: "Suppliers" },
+  { id: "quotes", label: "Quotes" },
+  { id: "decide", label: "Decide" },
+];
+
+export type WorkspaceFlowArgs = {
   hasNeed: boolean;
+  supplierCount: number;
   threadCount: number;
   offerCount: number;
   verifiedCount: number;
   requiresEvidence: boolean;
   hasPlan: boolean;
   planApproved: boolean;
-}) {
+};
+
+export function nextStepForWorkspace(args: WorkspaceFlowArgs) {
   if (!args.hasNeed) return "Create your first requirement to begin.";
-  if (args.threadCount === 0) return "Add suppliers below and approve outreach.";
-  if (args.offerCount === 0) return "Requests are out — wait for replies, or nudge anyone quiet.";
+  if (args.supplierCount === 0 && args.threadCount === 0 && args.offerCount === 0) {
+    return "Add a supplier, then send a request or paste a quote.";
+  }
+  if (args.offerCount === 0) return "Waiting for replies — or paste a quote you already received.";
   if (args.requiresEvidence && args.verifiedCount < args.offerCount) return "Verify the remaining certification evidence.";
-  if (!args.hasPlan) return "Compute the allocation to see the recommendation.";
+  if (!args.hasPlan) return "Compute the recommendation from the quotes on hand.";
   if (!args.planApproved) return "Review the recommendation and approve the plan.";
   return "Done — every supplier has been answered.";
+}
+
+// Same predicate order as nextStepForWorkspace: the coordinator's next
+// action, mapped onto the four-step workspace.
+export function flowStepForWorkspace(args: WorkspaceFlowArgs): WorkspaceFlowStep {
+  if (!args.hasNeed) return "requirement";
+  if (args.supplierCount === 0 && args.threadCount === 0 && args.offerCount === 0) return "suppliers";
+  if (args.offerCount === 0) return "quotes";
+  if (args.requiresEvidence && args.verifiedCount < args.offerCount) return "quotes";
+  return "decide";
+}
+
+export function flowStepAvailable(
+  step: WorkspaceFlowStep,
+  args: WorkspaceFlowArgs,
+) {
+  if (step === "requirement") return true;
+  if (step === "suppliers") return args.hasNeed;
+  if (step === "quotes") {
+    return args.hasNeed && (args.supplierCount > 0 || args.threadCount > 0 || args.offerCount > 0);
+  }
+  return Boolean(
+    args.hasPlan || (args.offerCount > 0 && (!args.requiresEvidence || args.verifiedCount >= args.offerCount)),
+  );
 }
 
 export function awaitingReplyThreads<T extends { status: string; agentmailMessageId?: string }>(threads: T[]) {
