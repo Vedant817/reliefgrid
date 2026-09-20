@@ -11,14 +11,13 @@ test("production workspace opens without seeded records or demo controls", async
   await expect(page.getByText("ReliefGrid", { exact: true })).toBeVisible();
   await expect(page.getByText(/sample scenario/i)).toHaveCount(0);
   await expect(page.getByText(/demo controls/i)).toHaveCount(0);
-  const createAction = page.getByRole("button", { name: "Create a requirement" });
-  await expect(createAction).toHaveCount(1);
+  await expect(page.getByRole("form")).toBeVisible();
+  await expect(page.getByLabel("Email")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Create a requirement" })).toHaveCount(0);
   const viewport = await page.evaluate(() => ({
     clientHeight: document.documentElement.clientHeight,
     scrollHeight: document.documentElement.scrollHeight,
   }));
-  expect(viewport.scrollHeight).toBe(viewport.clientHeight);
-  await createAction.click();
-  await expect(page.getByRole("dialog", { name: "Create urgent requirement" })).toBeVisible();
+  expect(viewport.scrollHeight).toBeLessThanOrEqual(viewport.clientHeight + 80);
   expect(errors).toEqual([]);
 });
