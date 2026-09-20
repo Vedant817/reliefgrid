@@ -8,7 +8,7 @@ type PublicRecallCheckProps = {
   target: number;
 };
 
-// Real-world evidence watch for customer needs: Firecrawl searches public
+// Real-world evidence watch for customer needs: live web providers search public
 // recall sources (CPSC, FDA, NSF) for the need's exact product identifiers.
 // A confirmed authoritative match freezes every affected offer through the
 // same transactional evidence path as allocation approval. No match means no writes.
@@ -40,7 +40,7 @@ export function PublicRecallCheck({ needId, coverage, target }: PublicRecallChec
     <section className="card p-4">
       <div className="eyebrow">Public recall watch</div>
       <p className="mt-1 text-xs leading-relaxed text-soft">
-        Firecrawl checks public recall sources for this exact product. A confirmed match freezes the affected offers and drafts a hold notice.
+        Firecrawl checks public recall sources first, with Exa fallback. A confirmed match freezes the affected offers and drafts a hold notice.
       </p>
       <button
         disabled={!needId || pending}

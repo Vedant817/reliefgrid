@@ -126,7 +126,7 @@ export function SupplierOutreach({ needId, needs, suppliers, threads }: { needId
 
       {finding && (
         <div className="mt-4 rounded-lg border border-hairline bg-paper p-3">
-          <div className="text-xs text-soft">Firecrawl searches the web for suppliers of this item. Each search is a billable provider call; adding a candidate still needs a real contact email.</div>
+          <div className="text-xs text-soft">Firecrawl searches first, with Exa fallback when unavailable. Each search is a billable provider call; adding a candidate still needs a real contact email.</div>
           <button
             disabled={!needId || searching}
             onClick={() => void handleSearch()}

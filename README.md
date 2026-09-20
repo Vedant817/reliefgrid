@@ -1,6 +1,6 @@
 # ReliefGrid
 
-ReliefGrid turns real supplier quote emails into a human-approved sourcing decision. It stores requests and supplier threads in Convex, ingests signed AgentMail replies, extracts offer fields with a configured LLM, checks external evidence through Firecrawl, and applies deterministic allocation rules.
+ReliefGrid turns real supplier quote emails into a human-approved sourcing decision. It stores requests and supplier threads in Convex, ingests signed AgentMail replies, extracts offer fields with a configured LLM, checks external evidence through Firecrawl with Exa fallback, and applies deterministic allocation rules.
 
 The repository has no production-reachable sample loader, supplier seed mutation, synthetic offer workflow, or provider mock fallback. A new workspace starts empty and provider failures remain visible.
 
@@ -35,6 +35,7 @@ npm run test:e2e
 - Supplier email is sent only after an explicit user action.
 - Inbound email enters through the signed AgentMail webhook.
 - Missing credentials and provider failures do not create fabricated offers or evidence.
+- Web research prefers Firecrawl and automatically retries through Exa when Firecrawl fails or has no credits.
 - Supplier claims and uploaded files do not become authoritative verification automatically.
 - Allocation is deterministic; a person must approve the plan.
 

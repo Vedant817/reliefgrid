@@ -27,6 +27,7 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
    npx convex env set AGENTMAIL_INBOX
    npx convex env set AGENTMAIL_WEBHOOK_SECRET
    npx convex env set FIRECRAWL_API_KEY
+   npx convex env set EXA_API_KEY
    npx convex env set GROQ_API_KEY
    ```
 
@@ -56,7 +57,7 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
 4. Enter the required arrival time and delivery location. If certification matters, enter both the exact certification name and an exact model, product, or lot identifier used to match external evidence.
 5. Click **Create requirement**. The incident and its requests appear in the left column.
 6. Under **Supplier outreach**, click **Add supplier** and enter a real supplier name, deliverable email address, and service region. Addresses under special-use test/example domains are rejected.
-7. Optionally click **Find suppliers** to search with Firecrawl. Search results only prefill a name; you must still provide and review the real contact email.
+7. Optionally click **Find suppliers** to search with Firecrawl. If Firecrawl is unavailable or out of credits, ReliefGrid automatically uses Exa. Search results only prefill a name; you must still provide and review the real contact email.
 8. Click **Approve & send RFQ** for a supplier. This explicit approval creates or maps the request inbox and sends the RFQ through AgentMail. For several line items, **Approve & send all** sends the selected supplier list across all requests.
 9. Wait for the supplier to reply to the RFQ email. The signed AgentMail webhook ingests the reply; the configured LLM extracts quantity, unit price, arrival time, conditions, and source spans. The offer matrix updates in real time.
 10. If an offer is ambiguous, click **Draft targeted clarification**, review the question, then click **Approve & send**. Nothing is sent merely because a draft was generated.
@@ -75,7 +76,8 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
 | Convex | authentication, database, realtime UI, storage, backend functions | application cannot start |
 | AgentMail | request inboxes, RFQs, replies, reminders, clarifications, award/decline and hold notices | outbound/inbound email actions fail and remain unsent |
 | Groq or OpenAI | extracting offers and drafting clarifications | reply extraction and clarification drafting fail |
-| Firecrawl | supplier discovery, evidence verification, public recall checks | those checks fail without changing eligibility |
+| Firecrawl | primary supplier discovery, evidence verification, public recall checks | Exa is attempted before the operation fails |
+| Exa | fallback web search and page contents | the operation fails without changing eligibility |
 
 ## 4. Production deployment checklist
 
@@ -96,6 +98,7 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
    npx convex env set --prod AGENTMAIL_INBOX
    npx convex env set --prod AGENTMAIL_WEBHOOK_SECRET
    npx convex env set --prod FIRECRAWL_API_KEY
+   npx convex env set --prod EXA_API_KEY
    npx convex env set --prod GROQ_API_KEY
    ```
 
