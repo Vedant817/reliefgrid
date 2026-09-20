@@ -1,6 +1,6 @@
 import { internal } from "../_generated/api";
 
-export type RunProvider = "convex" | "openai" | "groq" | "firecrawl" | "agentmail";
+export type RunProvider = "convex" | "openai" | "groq" | "firecrawl" | "exa" | "agentmail";
 
 // One call records one provider-ledger row for an attempt whose outcome is
 // already known. Callers keep policy (what counts as failed, which ids);

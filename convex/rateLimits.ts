@@ -3,7 +3,7 @@ import { components } from "./_generated/api";
 
 // Cost guardrail for every billable provider lane. Generous on purpose for
 // interactive use; tight enough that a loop bug or spammy supplier cannot drain
-// Firecrawl/Groq balances overnight. Keyed per need/offer so one hot need
+// Web-research/LLM provider limits use fixed windows. Keyed per need/offer so one hot need
 // never starves the rest.
 export const providerLimits = new RateLimiter(components.rateLimiter, {
   extractOffer: { kind: "fixed window", rate: 60, period: HOUR },

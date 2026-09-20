@@ -6,7 +6,7 @@ import { requireOwnerId } from "./model/auth";
 
 declare const process: { env: Record<string, string | undefined> };
 
-type Provider = "convex" | "openai" | "groq" | "firecrawl" | "agentmail";
+type Provider = "convex" | "openai" | "groq" | "firecrawl" | "exa" | "agentmail";
 type RunStatus = "live" | "degraded" | "not_configured" | "failed";
 
 const runStatus = v.union(
@@ -21,6 +21,7 @@ const provider = v.union(
   v.literal("openai"),
   v.literal("groq"),
   v.literal("firecrawl"),
+  v.literal("exa"),
   v.literal("agentmail"),
 );
 
@@ -53,6 +54,7 @@ export const getProviderHealth = query({
     const hasOpenAI = !!env.OPENAI_API_KEY;
     const hasGroq = !!env.GROQ_API_KEY;
     const hasFirecrawl = !!env.FIRECRAWL_API_KEY;
+    const hasExa = !!env.EXA_API_KEY;
     const hasAgentMail = !!env.AGENTMAIL_API_KEY;
 
     const recent = await ctx.db.query("providerRuns").withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId)).order("desc").take(20);
@@ -63,6 +65,7 @@ export const getProviderHealth = query({
     const openaiRun = lastBy("openai");
     const groqRun = lastBy("groq");
     const firecrawlRun = lastBy("firecrawl");
+    const exaRun = lastBy("exa");
     const agentmailRun = lastBy("agentmail");
 
     const statusFor = (last: { status: RunStatus } | null): RunStatus => {
@@ -100,6 +103,12 @@ export const getProviderHealth = query({
         status: hasFirecrawl ? statusFor(firecrawlRun) : "not_configured",
         detail: hasFirecrawl ? (firecrawlRun ? "configured; run evidence below" : "configured; no run verified") : "not configured",
         lastRun: firecrawlRun,
+      },
+      {
+        provider: "exa",
+        status: hasExa ? statusFor(exaRun) : "not_configured",
+        detail: hasExa ? (exaRun ? "configured; run evidence below" : "configured as web research fallback; no run verified") : "not configured",
+        lastRun: exaRun,
       },
       {
         provider: "agentmail",

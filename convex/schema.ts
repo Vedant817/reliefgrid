@@ -244,6 +244,7 @@ export default defineSchema({
       v.literal("openai"),
       v.literal("groq"),
       v.literal("firecrawl"),
+      v.literal("exa"),
       v.literal("agentmail"),
     ),
     operation: v.string(), // e.g. extract, scrape, send_rfq, webhook

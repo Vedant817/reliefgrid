@@ -3,7 +3,9 @@
 import { v } from "convex/values";
 import { action } from "../_generated/server";
 import { api, internal } from "../_generated/api";
-import { resolveFirecrawl, scrapeViaComponent, searchViaComponent } from "../lib/firecrawl";
+import { scrapeViaComponent, searchViaComponent } from "../lib/firecrawl";
+import { scrapeViaExa, searchViaExa } from "../lib/exa";
+import { WebResearchError, recordWebFailures, resolveWebResearch, withWebResearchFallback } from "../lib/webResearch";
 import {
   RECALL_LANGUAGE,
   containsExactPhrase,
@@ -15,10 +17,11 @@ import { checkLimit } from "../rateLimits";
 import { recordRun } from "../lib/runs";
 import type { Id } from "../_generated/dataModel";
 
-// Real-world evidence drift: Firecrawl searches public recall sources for
-// the need's exact product identifiers and, when an authoritative page
-// confirms a matching recall, freezes every affected offer through the same
-// transactional evidence path (failed source check, draft
+// Real-world evidence drift: Firecrawl searches public recall sources first,
+// with Exa as the live fallback. The same exact-match and authoritative-source
+// policy checks the need's product identifiers. A confirmed matching recall
+// freezes every affected offer through the same transactional evidence path
+// (failed source check, draft
 // hold notice, recompute, audit). No match means no writes at all.
 export const checkPublicRecalls = action({
   args: { needId: v.id("needs") },
@@ -44,26 +47,24 @@ export const checkPublicRecalls = action({
       throw new Error("Add a product/model evidence key or required certification so public sources can be matched exactly");
     }
     await checkLimit(ctx, "verifySource", `public-recall:${String(args.needId)}`, ownerId);
-    const firecrawl = resolveFirecrawl();
-    if (!firecrawl.apiKey) throw new Error("no Firecrawl key configured (FIRECRAWL_API_KEY)");
-
     const startedAt = Date.now();
     const searchQuery = `${need.item} recall ${need.certRequired ?? ""} ${need.evidenceKey ?? ""}`.replace(/\s+/g, " ").trim();
-    let hits;
+    const providers = resolveWebResearch();
+    let searchRetrieval;
     try {
-      hits = (await searchViaComponent(ctx, searchQuery, 5)).hits;
-    } catch (error) {
-      await recordRun(ctx, {
-        provider: "firecrawl",
-        operation: "search_public_recalls",
-        status: "failed",
-        startedAt,
-        requestId: searchQuery,
-        meta: JSON.stringify({ error: error instanceof Error ? error.message : "unknown" }),
-        ownerId,
+      searchRetrieval = await withWebResearchFallback({
+        ...providers,
+        firecrawl: () => searchViaComponent(ctx, searchQuery, 5),
+        exa: () => searchViaExa(searchQuery, 5, { apiKey: providers.exaApiKey ?? undefined }),
       });
+    } catch (error) {
+      if (error instanceof WebResearchError) {
+        await recordWebFailures(ctx, error.failures, { operation: "search_public_recalls", startedAt, requestId: searchQuery, ownerId });
+      }
       throw error;
     }
+    await recordWebFailures(ctx, searchRetrieval.failures, { operation: "search_public_recalls", startedAt, requestId: searchQuery, ownerId });
+    const hits = searchRetrieval.value.hits;
     const candidates = hits.filter((hit) => {
       try {
         const parsed = new URL(hit.url);
@@ -75,10 +76,32 @@ export const checkPublicRecalls = action({
 
     for (const candidate of candidates) {
       let quote: string;
+      let scrapeProvider = searchRetrieval.provider;
       try {
-        const scraped = await scrapeViaComponent(ctx, candidate.url);
+        const scrapedRetrieval = await withWebResearchFallback({
+          ...providers,
+          prefer: searchRetrieval.provider,
+          firecrawl: () => scrapeViaComponent(ctx, candidate.url),
+          exa: () => scrapeViaExa(candidate.url, { apiKey: providers.exaApiKey ?? undefined }),
+        });
+        await recordWebFailures(ctx, scrapedRetrieval.failures, {
+          operation: "scrape_public_recall",
+          startedAt,
+          requestId: candidate.url,
+          ownerId,
+        });
+        const scraped = scrapedRetrieval.value;
+        scrapeProvider = scrapedRetrieval.provider;
         quote = `${scraped.title} — ${scraped.quote}`;
-      } catch {
+      } catch (error) {
+        if (error instanceof WebResearchError) {
+          await recordWebFailures(ctx, error.failures, {
+            operation: "scrape_public_recall",
+            startedAt,
+            requestId: candidate.url,
+            ownerId,
+          });
+        }
         continue;
       }
       const body = normalized(quote);
@@ -102,12 +125,12 @@ export const checkPublicRecalls = action({
         contentHash: await sha256Hex(quote),
       });
       await recordRun(ctx, {
-        provider: "firecrawl",
+        provider: scrapeProvider,
         operation: "search_public_recalls",
         status: "live",
         startedAt,
         requestId: candidate.url,
-        meta: JSON.stringify({ invalidated: result.invalidated }),
+        meta: JSON.stringify({ invalidated: result.invalidated, fallback: scrapeProvider === "exa" }),
         ownerId,
       });
       return {
@@ -123,12 +146,13 @@ export const checkPublicRecalls = action({
     }
 
     await recordRun(ctx, {
-      provider: "firecrawl",
+      provider: searchRetrieval.provider,
       operation: "search_public_recalls",
       status: "live",
       startedAt,
-      requestId: searchQuery,
-      meta: JSON.stringify({ checked: candidates.length, result: "clear" }),
+      latencyMs: searchRetrieval.value.latencyMs,
+      requestId: searchRetrieval.value.requestId,
+      meta: JSON.stringify({ checked: candidates.length, result: "clear", fallback: searchRetrieval.provider === "exa" }),
       ownerId,
     });
     return {

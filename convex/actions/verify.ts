@@ -3,7 +3,9 @@
 import { action } from "../_generated/server";
 import { v } from "convex/values";
 import { api, internal } from "../_generated/api";
-import { resolveFirecrawl, scrapeViaComponent } from "../lib/firecrawl";
+import { scrapeViaComponent } from "../lib/firecrawl";
+import { scrapeViaExa } from "../lib/exa";
+import { WebResearchError, recordWebFailures, resolveWebResearch, withWebResearchFallback } from "../lib/webResearch";
 import {
   RECALL_LANGUAGE,
   authorityForHostname,
@@ -14,9 +16,9 @@ import {
 import { checkLimit } from "../rateLimits";
 import { recordRun } from "../lib/runs";
 
-// Live-only Firecrawl verification. There is no fabricated fallback: missing keys or
-// provider errors throw after recording a failed run, so verification state
-// is never silently fabricated.
+// Live web verification prefers Firecrawl and falls back to Exa. Both paths
+// feed the same strict evidence matcher; provider output alone never changes
+// eligibility without authoritative-domain and exact-claim matches.
 export const verifyOffer = action({
   args: {
     offerId: v.id("offers"),
@@ -43,24 +45,32 @@ export const verifyOffer = action({
     }
     await checkLimit(ctx, "verifySource", String(args.offerId), offer.ownerId);
     const startedAt = Date.now();
-    const firecrawl = resolveFirecrawl();
-    if (!firecrawl.apiKey) throw new Error("no Firecrawl key configured (FIRECRAWL_API_KEY)");
-
-    let scraped;
+    const providers = resolveWebResearch();
+    let retrieval;
     try {
-      scraped = await scrapeViaComponent(ctx, args.url);
-    } catch (e) {
-      await recordRun(ctx, {
-        provider: "firecrawl",
-        operation: `verify_${args.type}`,
-        status: "failed",
-        startedAt,
-        requestId: String(args.offerId),
-        meta: JSON.stringify({ error: e instanceof Error ? e.message : "unknown", url: args.url }),
-        ownerId: offer.ownerId,
+      retrieval = await withWebResearchFallback({
+        ...providers,
+        firecrawl: () => scrapeViaComponent(ctx, args.url),
+        exa: () => scrapeViaExa(args.url, { apiKey: providers.exaApiKey ?? undefined }),
       });
+    } catch (e) {
+      if (e instanceof WebResearchError) {
+        await recordWebFailures(ctx, e.failures, {
+          operation: `verify_${args.type}`,
+          startedAt,
+          requestId: String(args.offerId),
+          ownerId: offer.ownerId,
+        });
+      }
       throw e;
     }
+    await recordWebFailures(ctx, retrieval.failures, {
+      operation: `verify_${args.type}`,
+      startedAt,
+      requestId: String(args.offerId),
+      ownerId: offer.ownerId,
+    });
+    const scraped = retrieval.value;
 
     const quote = `${scraped.title} — ${scraped.quote}`;
     const authority = authorityForHostname(host);
@@ -96,12 +106,13 @@ export const verifyOffer = action({
     });
     await ctx.runMutation(internal.allocations.computeAllocationInternal, { needId: offer.needId });
     await recordRun(ctx, {
-      provider: "firecrawl",
+      provider: retrieval.provider,
       operation: `verify_${args.type}`,
       status: "live",
       startedAt,
       latencyMs: scraped.latencyMs,
       requestId: scraped.requestId,
+      meta: JSON.stringify({ fallback: retrieval.provider === "exa", url: args.url }),
       ownerId: offer.ownerId,
     });
 

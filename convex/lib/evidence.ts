@@ -1,4 +1,4 @@
-// Shared evidence-matching primitives for every Firecrawl-backed check
+// Shared evidence-matching primitives for every web-provider-backed check
 // (offer verification, public recall watch). One normalization, one
 // authority rule, one recall language — callers differ in match POLICY
 // (which identifiers, what verdict), never in these primitives.

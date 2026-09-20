@@ -9,6 +9,7 @@ const app = defineApp({
   env: {
     FIRECRAWL_API_KEY: v.string(),
     FIRECRAWL_WEBHOOK_SECRET: v.optional(v.string()),
+    EXA_API_KEY: v.optional(v.string()),
   },
 });
 app.use(rateLimiter, { name: "rateLimiter" });
