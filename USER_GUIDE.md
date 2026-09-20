@@ -26,12 +26,13 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
    npx convex env set AGENTMAIL_API_KEY
    npx convex env set AGENTMAIL_INBOX
    npx convex env set AGENTMAIL_WEBHOOK_SECRET
+   npx convex env set OPENAI_API_KEY
+   npx convex env set GROQ_API_KEY
    npx convex env set FIRECRAWL_API_KEY
    npx convex env set EXA_API_KEY
-   npx convex env set GROQ_API_KEY
    ```
 
-   `OPENAI_API_KEY` can replace `GROQ_API_KEY`. If a provider is not configured, the related action fails visibly; ReliefGrid does not substitute generated test data.
+   Extraction uses OpenAI first and falls back to Groq (`openai/gpt-oss-120b` by default) when OpenAI is missing or the request fails. Web research uses Firecrawl first and falls back to Exa. If a provider is not configured, the related action fails visibly; ReliefGrid does not substitute generated test data.
 
 4. In AgentMail, register this webhook URL using the same webhook secret:
 
@@ -51,23 +52,23 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
 
 ## 2. Use the application
 
-1. On first load, ReliefGrid creates a private anonymous workspace in the browser. Click **Create your first requirement** or **New Incident**.
-2. Enter the incident name and operational context.
+1. On first load, create an account with email and password (Convex Auth). Click **Create a requirement** or **New requirement**. The workspace is private to that account and starts empty.
+2. Enter the requirement name and context.
 3. For every line item, enter the real item name, quantity, and budget. Add more rows when one purchase contains several items.
 4. Enter the required arrival time and delivery location. If certification matters, enter both the exact certification name and an exact model, product, or lot identifier used to match external evidence.
-5. Click **Create requirement**. The incident and its requests appear in the left column.
+5. Click **Create requirement**. The requirement and its line items appear in the left column.
 6. Under **Supplier outreach**, click **Add supplier** and enter a real supplier name, deliverable email address, and service region. Addresses under special-use test/example domains are rejected.
-7. Optionally click **Find suppliers** to search with Firecrawl. If Firecrawl is unavailable or out of credits, ReliefGrid automatically uses Exa. Search results only prefill a name; you must still provide and review the real contact email.
-8. Click **Approve & send RFQ** for a supplier. This explicit approval creates or maps the request inbox and sends the RFQ through AgentMail. For several line items, **Approve & send all** sends the selected supplier list across all requests.
-9. Wait for the supplier to reply to the RFQ email. The signed AgentMail webhook ingests the reply; the configured LLM extracts quantity, unit price, arrival time, conditions, and source spans. The offer matrix updates in real time.
+7. Optionally click **Find suppliers** to search the public web. Firecrawl is tried first; Exa is used automatically when Firecrawl is unavailable or out of credits. Search results only prefill a name; you must still provide and review the real contact email.
+8. Click **Approve & send request** for a supplier. This explicit approval creates or maps the request inbox and sends the request through AgentMail. For several line items, **Approve & send all** sends the selected supplier list across all requests.
+9. Wait for the supplier to reply, or paste a quote you already received. Inbound AgentMail replies and pasted quotes use the same OpenAI (Groq fallback) extraction path. The quote list updates in real time.
 10. If an offer is ambiguous, click **Draft targeted clarification**, review the question, then click **Approve & send**. Nothing is sent merely because a draft was generated.
 11. If certification is required, paste an authoritative HTTPS evidence page into **Independent certification check** and click **Verify**. The page must contain the exact certification and product/model identifier. Supporting or non-matching pages remain under review.
 12. Optionally attach a supplier certificate or other evidence with **+ Cert evidence**. An attachment is supporting documentation; it does not by itself mark an offer verified.
-13. Click **Compute allocation**. Deterministic code applies quantity, price, deadline, budget, confidence, and evidence rules. Review the selected lines and rejection reasons.
+13. Click **Compute recommendation**. Deterministic code applies quantity, price, deadline, budget, confidence, and evidence rules. Review the selected lines and rejection reasons.
 14. Expand **How was this decision made?** to compare constraint changes without changing saved data.
 15. When the recommendation is complete and correct, click **Approve plan**. Approval revalidates current inputs and queues award/decline notices in the original supplier threads.
 16. Use **View full report** in the decision summary to open the printable decision record, then choose **Print / PDF**.
-17. Use **Public recall watch** when the product identifier should be checked against authoritative recall sources. A confirmed match invalidates affected offers, recomputes the plan, and creates a hold-notice draft. Review and explicitly approve that notice before sending it.
+17. Expand **Public recall check** when the product identifier should be checked against authoritative recall sources. A confirmed match invalidates affected offers, recomputes the plan, and creates a hold-notice draft. Review and explicitly approve that notice before sending it.
 
 ## 3. What each provider controls
 
@@ -75,7 +76,8 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
 | --- | --- | --- |
 | Convex | authentication, database, realtime UI, storage, backend functions | application cannot start |
 | AgentMail | request inboxes, RFQs, replies, reminders, clarifications, award/decline and hold notices | outbound/inbound email actions fail and remain unsent |
-| Groq or OpenAI | extracting offers and drafting clarifications | reply extraction and clarification drafting fail |
+| OpenAI | primary offer extraction and clarification drafts | Groq is attempted before the operation fails |
+| Groq | fallback LLM (`openai/gpt-oss-120b` unless `GROQ_MODEL` is set) | extraction and clarification fail |
 | Firecrawl | primary supplier discovery, evidence verification, public recall checks | Exa is attempted before the operation fails |
 | Exa | fallback web search and page contents | the operation fails without changing eligibility |
 
@@ -97,9 +99,10 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
    npx convex env set --prod AGENTMAIL_API_KEY
    npx convex env set --prod AGENTMAIL_INBOX
    npx convex env set --prod AGENTMAIL_WEBHOOK_SECRET
+   npx convex env set --prod OPENAI_API_KEY
+   npx convex env set --prod GROQ_API_KEY
    npx convex env set --prod FIRECRAWL_API_KEY
    npx convex env set --prod EXA_API_KEY
-   npx convex env set --prod GROQ_API_KEY
    ```
 
 3. Register the production Convex site webhook in AgentMail. Do not reuse the development webhook URL or secret.
@@ -115,4 +118,4 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
 
 ## Production identity warning
 
-The current UI automatically signs visitors into anonymous, browser-scoped Convex Auth workspaces. This isolates records, but it is not an organization login or role system. Before allowing multiple employees or external customers into a production URL, replace anonymous sign-in with your organization identity provider and define coordinator/approver roles. Do not describe this build as enterprise access-controlled until that work is complete.
+The UI uses Convex Auth with email and password. Each account has a private workspace that starts empty. Organization roles (coordinator vs approver), SSO, retention policy, and customer-specific approval rules remain production rollout requirements.
