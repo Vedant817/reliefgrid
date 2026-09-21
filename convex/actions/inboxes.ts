@@ -19,8 +19,9 @@ export const ensureInboxForNeed = action({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Authentication required");
-    const need: any = await ctx.runQuery(api.needs.getNeed, { needId: args.needId });
-    if (!need) throw new Error("Need not found");
+    const ownership: any = await ctx.runQuery(internal.needs.getNeedOwnership, { needId: args.needId });
+    const need = ownership.need;
+    const ownerId: string = ownership.ownerId;
     const existing: any = await ctx.runQuery(api.inboxes.getInboxByNeed, { needId: args.needId });
     if (existing) return { inboxId: existing.inboxId, email: existing.email, providerStatus: "live" as const };
     const mail = resolveAgentMail();
@@ -41,7 +42,7 @@ export const ensureInboxForNeed = action({
     } else {
       operation = "create_inbox";
       try {
-        await checkLimit(ctx, "sendRfq", `inbox:${String(args.needId)}`, identity.tokenIdentifier);
+        await checkLimit(ctx, "sendRfq", `inbox:${String(args.needId)}`, ownerId);
       } catch (error) {
         await ctx.runMutation(internal.inboxes.releaseInboxClaim, { needId: args.needId, claimedAt: claim.claimedAt });
         throw error;
@@ -62,7 +63,7 @@ export const ensureInboxForNeed = action({
       latencyMs: created.latencyMs,
       requestId: created.inboxId,
       meta: JSON.stringify({ needId: String(args.needId) }),
-      ownerId: identity.tokenIdentifier,
+      ownerId,
     });
     return { inboxId: created.inboxId, email: created.email, providerStatus: "live" as const };
   },

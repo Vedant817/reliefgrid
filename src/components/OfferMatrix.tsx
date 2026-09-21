@@ -273,7 +273,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
 
       <div className="border-t border-hairline bg-paper px-4 py-3">
         <p className="text-[11px] text-soft">Quotes update live as supplier replies are ingested.</p>
-        <details className="mt-2">
+        <details open className="mt-2">
           <summary className="cursor-pointer text-xs font-semibold text-ink">Paste another quote</summary>
           <PasteQuote needId={needId} suppliers={suppliers ?? []} />
         </details>

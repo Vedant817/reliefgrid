@@ -313,7 +313,7 @@ export const getLatestPlan = query({
   },
 });
 
-export const approvePlan = mutation({
+export const approvePlan = internalMutation({
   args: {
     planId: v.id("allocationPlans"),
     notes: v.optional(v.string()),
@@ -420,7 +420,9 @@ export const approvePlan = mutation({
       const shouldAward = selectedSupplierIds.has(t.supplierId);
       await ctx.db.patch(t._id, { status: shouldAward ? "awarded" : "rejected" });
     }
-    await ctx.scheduler.runAfter(0, internal.actions.awards.sendAwardNotices, { planId: args.planId });
+    // The public approval action dispatches immediately and reports the result.
+    // This delayed idempotent run closes the mutation/action crash window.
+    await ctx.scheduler.runAfter(60_000, internal.actions.awards.sendAwardNotices, { planId: args.planId });
     return args.planId;
   },
 });

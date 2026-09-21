@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { requireSupplierOwner, supplierBelongsTo } from "./auth";
+import { ownerAccessFromIdentity, ownerMatches, requireSupplierOwner, supplierBelongsTo } from "./auth";
 
 describe("supplierBelongsTo", () => {
   test("matches only the owning workspace", () => {
@@ -11,5 +11,18 @@ describe("supplierBelongsTo", () => {
 
   test("requireSupplierOwner is exported for the chain", () => {
     expect(typeof requireSupplierOwner).toBe("function");
+  });
+
+  test("uses a stable user id while recognizing legacy session-scoped owners", () => {
+    const first = ownerAccessFromIdentity({
+      issuer: "https://example.convex.site",
+      subject: "user-123|session-new",
+      tokenIdentifier: "https://example.convex.site|user-123|session-new",
+    }, "user-123");
+
+    expect(first.ownerId).toBe("user-123");
+    expect(ownerMatches("user-123", first)).toBe(true);
+    expect(ownerMatches("https://example.convex.site|user-123|session-old", first)).toBe(true);
+    expect(ownerMatches("https://example.convex.site|user-456|session-old", first)).toBe(false);
   });
 });

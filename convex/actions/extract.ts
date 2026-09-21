@@ -132,16 +132,22 @@ export const extractOfferFromEmail = internalAction({
     const priceMatch = text.match(/\$(\d+(?:\.\d+)?)/);
     const arrivalMatch = text.match(/tomorrow(?: morning)?(?:\s+\d+\s*(?:am|pm))?|\d{4}-\d{2}-\d{2}[^\s,;]*|\d+\s*(?:a\.?m\.?|p\.?m\.?)/i);
     const certMatch = certMatchFrom(text, context.certRequired);
-
+    const certRequired = Boolean(context.certRequired?.trim());
     const fieldEvidence = {
       qty: evidenceSpan(qtyMatch, parsed.fieldConfidences.qty),
       price: evidenceSpan(priceMatch, parsed.fieldConfidences.price),
       arrival: evidenceSpan(arrivalAt > 0 ? arrivalMatch : null, parsed.fieldConfidences.arrival),
-      cert: evidenceSpan(certMatch, parsed.fieldConfidences.cert),
+      cert: certRequired
+        ? evidenceSpan(certMatch, parsed.fieldConfidences.cert)
+        : { confidence: 1, start: 0, end: 0, quote: "" },
     };
-    const minimumFieldConfidence = Math.min(...Object.values(fieldEvidence).map((field) => field.confidence));
+    const scoredFields = certRequired
+      ? Object.values(fieldEvidence)
+      : [fieldEvidence.qty, fieldEvidence.price, fieldEvidence.arrival];
+    const minimumFieldConfidence = Math.min(...scoredFields.map((field) => field.confidence));
     confidence = Math.min(confidence, minimumFieldConfidence);
-    if (minimumFieldConfidence < MIN_EVIDENCE_CONFIDENCE) certStatus = "needs_review";
+    if (certRequired && minimumFieldConfidence < MIN_EVIDENCE_CONFIDENCE) certStatus = "needs_review";
+    if (!certRequired && certStatus === "needs_review") certStatus = "unverified";
 
     await ctx.runMutation(internal.offers.upsertOfferVersion, {
       needId: args.needId,

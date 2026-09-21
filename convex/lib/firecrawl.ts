@@ -1,5 +1,6 @@
 import { FirecrawlClient } from "@firecrawl/firecrawl-convex";
 import { components } from "../_generated/api";
+import { extractPublicContactEmail } from "./supplierDiscovery";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -20,6 +21,7 @@ export type SearchHit = {
   url: string;
   title: string;
   snippet: string;
+  contactEmail?: string;
 };
 
 // Web search through the official Firecrawl component. Returns normalized
@@ -35,7 +37,11 @@ export async function searchViaComponent(ctx: any, query: string, limit = 5): Pr
   const client = new FirecrawlClient(components.firecrawl);
   let response;
   try {
-    response = await client.search(ctx, query, { sources: ["web"], limit });
+    response = await client.search(ctx, query, {
+      sources: ["web"],
+      limit,
+      scrapeOptions: { formats: ["markdown"], onlyMainContent: true },
+    });
   } catch (error) {
     firecrawlFailure(error, "search");
   }
@@ -46,7 +52,9 @@ export async function searchViaComponent(ctx: any, query: string, limit = 5): Pr
     if (!url) continue;
     const title = typeof item.title === "string" && item.title ? item.title : url;
     const snippet = typeof item.description === "string" ? item.description.slice(0, 200) : "";
-    if (!hits.some((hit) => hit.url === url)) hits.push({ url, title: title.slice(0, 120), snippet });
+    const markdown = typeof item.markdown === "string" ? item.markdown : "";
+    const contactEmail = extractPublicContactEmail(`${snippet}\n${markdown}`);
+    if (!hits.some((hit) => hit.url === url)) hits.push({ url, title: title.slice(0, 120), snippet, contactEmail });
     if (hits.length >= limit) break;
   }
   return { hits, requestId: query, latencyMs: Date.now() - startedAt };

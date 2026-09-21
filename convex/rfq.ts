@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
-import { requireNeedOwner, requireSupplierOwner, requireThreadOwner, supplierBelongsTo } from "./model/auth";
+import { ownerMatches, requireNeedOwner, requireSupplierOwner, requireThreadOwner } from "./model/auth";
 
 export const getThreadForSend = internalQuery({  args: { threadId: v.id("rfqThreads") },
   returns: v.any(),
@@ -61,7 +61,7 @@ export const createRfqThreadsForNeed = mutation({
   },
   returns: v.array(v.any()),
   handler: async (ctx, args) => {
-    const { ownerId } = await requireNeedOwner(ctx, args.needId);
+    const access = await requireNeedOwner(ctx, args.needId);
     if (args.supplierIds.length > 50) throw new Error("A maximum of 50 suppliers can be added at once");
 
     const threads = [];
@@ -73,7 +73,7 @@ export const createRfqThreadsForNeed = mutation({
     let createdCount = 0;
     for (const supplierId of new Set(args.supplierIds)) {
       const supplier = await ctx.db.get(supplierId);
-      if (!supplierBelongsTo(supplier, ownerId)) continue;
+      if (!supplier || !ownerMatches(supplier.ownerId, access)) continue;
 
       const already = await ctx.db
         .query("rfqThreads")
@@ -152,6 +152,7 @@ export const claimRfqSend = internalMutation({
     }
     const reconcile = thread.status === "sending";
     const { supplier } = await requireSupplierOwner(ctx, thread.supplierId);
+    if (supplier.isDemo) throw new Error("Demo suppliers cannot receive email. Paste a quote to continue the demo.");
     const inbox = await ctx.db.query("inboxes").withIndex("by_need", (q) => q.eq("needId", thread.needId)).first();
     if (!inbox) throw new Error("Create the need inbox before sending RFQs");
     const claimedAt = thread.sendClaimedAt ?? Date.now();

@@ -25,7 +25,7 @@ export function WelcomeHero({
               <span className="font-serif text-xl font-bold text-ledger">01</span><span>Requirement</span>
             </li>
             <li className="flex flex-1 items-center gap-3 sm:border-r sm:border-hairline sm:px-4">
-              <span className="font-serif text-xl font-bold text-ledger">02</span><span>Suppliers</span>
+              <span className="font-serif text-xl font-bold text-ledger">02</span><span>Shortlist</span>
             </li>
             <li className="flex flex-1 items-center gap-3 sm:border-r sm:border-hairline sm:px-4">
               <span className="font-serif text-xl font-bold text-ledger">03</span><span>Quotes</span>
@@ -47,7 +47,10 @@ export function WelcomeHero({
             <p className="text-xs text-soft">Nothing is sent until you approve supplier outreach.</p>
           </div>
         ) : (
-          <p className="mt-7 text-xs text-soft">Sign in to open a private workspace. It starts empty — no sample records.</p>
+          <p className="mt-7 text-xs text-soft">
+            Sign in to open a private workspace with a starter vendor directory. Requirements and quotes remain private
+            to the account.
+          </p>
         )}
       </div>
     </section>

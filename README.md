@@ -2,7 +2,7 @@
 
 ReliefGrid turns real supplier quote emails into a human-approved sourcing decision. It stores requests and supplier threads in Convex, ingests signed AgentMail replies, extracts offer fields with OpenAI (Groq fallback), checks external evidence through Firecrawl (Exa fallback), and applies deterministic allocation rules.
 
-The repository has no production-reachable sample loader, supplier seed mutation, synthetic offer workflow, or provider mock fallback. A new workspace starts empty and provider failures remain visible.
+Requirements, offers, evidence, and plans start empty, and provider failures remain visible. Each account receives four clearly labeled demo suppliers so a presenter can immediately exercise shortlisting, pasted-quote extraction, and allocation. Their reserved placeholder addresses can never receive RFQs or award notices; real outreach still requires a real supplier contact and an explicit user action.
 
 ## Local setup
 

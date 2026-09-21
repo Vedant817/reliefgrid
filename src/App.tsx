@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "convex/react";
+import { useEffect, useState } from "react";
+import { useAction, useQuery, useMutation } from "convex/react";
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "../convex/_generated/api";
 import { IncidentBoard } from "./components/IncidentBoard";
@@ -18,6 +18,7 @@ import { AuthScreen } from "./components/AuthScreen";
 import { AppHeader } from "./components/AppHeader";
 import { WorkspaceFlow } from "./components/WorkspaceFlow";
 import { formatDeadline } from "./lib/format";
+import { awardDispatchMessage } from "./lib/awards";
 import {
   flowStepAvailable,
   flowStepForWorkspace,
@@ -61,11 +62,18 @@ export default function App() {
   const latestPlan = workspace?.latestPlan ?? null;
   const verifiedOfferCount = workspace?.verifiedOfferCount ?? 0;
   const inboxEmail: string | undefined = workspace?.inbox?.email;
+  const sentThreadCount = threads.filter((thread: any) => Boolean(thread.agentmailMessageId)).length;
+  const relevantSupplierIds = new Set([
+    ...threads.map((thread: any) => String(thread.supplierId)),
+    ...offers.map((offer: any) => String(offer.supplierId)),
+  ]);
+  const relevantSuppliers = suppliers.filter((supplier: any) => relevantSupplierIds.has(String(supplier._id)));
 
   const flowArgs = {
     hasNeed: Boolean(activeNeed),
     supplierCount: suppliers.length,
     threadCount: threads.length,
+    sentThreadCount,
     offerCount: offers.length,
     verifiedCount: verifiedOfferCount,
     requiresEvidence: Boolean(activeNeed?.certRequired),
@@ -79,14 +87,21 @@ export default function App() {
   const override = stepOverride && flowStepAvailable(stepOverride, flowArgs) ? stepOverride : null;
   const activeStep = override ?? derivedStep;
 
-  const createIncident = useMutation(api.incidents.createIncident);
-  const createNeed = useMutation(api.needs.createNeed);
+  const createRequirement = useMutation(api.incidents.createRequirement);
+  const ensureDemoSuppliers = useMutation(api.suppliers.ensureDemoSuppliers);
   const computeAllocation = useMutation(api.allocations.computeAllocation);
-  const approvePlan = useMutation(api.allocations.approvePlan);
+  const approvePlan = useAction(api.actions.awards.approvePlanAndSendNotices);
 
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showNewIncident, setShowNewIncident] = useState(false);
+
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    void ensureDemoSuppliers({}).catch(() => {
+      // Supplier loading remains usable even if starter data cannot be prepared.
+    });
+  }, [ensureDemoSuppliers, isAuthenticated]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -100,32 +115,27 @@ export default function App() {
 
   const handleCreateRequirement = async (values: any) => {
     const deadlineAt = new Date(values.deadlineLocal).getTime();
-    const incidentId: any = await createIncident({ title: values.title, description: values.description || undefined, deadlineAt });
-    let firstNeedId: any = null;
-    for (const line of values.items) {
-      const needId: any = await createNeed({
-        incidentId,
+    const { incidentId, needIds } = await createRequirement({
+      title: values.title,
+      description: values.description || undefined,
+      deadlineAt,
+      certification: values.certification || undefined,
+      evidenceKey: values.evidenceKey || undefined,
+      deliveryLocation: values.deliveryLocation,
+      timezone: values.timezone,
+      items: values.items.map((line: any) => ({
         item: line.item,
         qty: line.qty,
-        deadlineAt,
         budgetCents: Math.round(line.budgetDollars * 100),
-        certRequired: values.certification || undefined,
-        evidenceKey: values.evidenceKey || undefined,
-        partialAllowed: true,
-        unit: "units",
-        deliveryLocation: values.deliveryLocation,
-        timezone: values.timezone,
-        currency: "USD",
-      });
-      firstNeedId ??= needId;
-    }
+      })),
+    });
     setSelectedIncidentId(incidentId);
-    setSelectedNeedId(firstNeedId);
+    setSelectedNeedId(needIds[0]);
     setStepOverride("suppliers");
     setShowNewIncident(false);
     showToast(values.items.length > 1
-      ? `${values.items.length} requests created — add suppliers`
-      : "Requirement created — add suppliers");
+      ? `${values.items.length} requests created — build the first shortlist`
+      : "Requirement created — find matching suppliers");
   };
 
   const handleRecompute = async () => {
@@ -145,8 +155,8 @@ export default function App() {
     if (!latestPlan) return;
     setBusy(true);
     try {
-      await approvePlan({ planId: latestPlan._id });
-      showToast("Allocation approved — supplier notices queued");
+      const result = await approvePlan({ planId: latestPlan._id });
+      showToast(awardDispatchMessage(result));
     } catch (e: any) {
       showToast(e.message);
     } finally {
@@ -217,10 +227,10 @@ export default function App() {
         : "Create what to buy",
     },
     suppliers: {
-      title: "Suppliers",
-      detail: suppliers.length
-        ? `${suppliers.length} supplier${suppliers.length === 1 ? "" : "s"}${threads.length ? ` · ${threads.length} requested` : ""}`
-        : "Add contacts, optionally send a request",
+      title: "Shortlist",
+      detail: threads.length
+        ? `${threads.length} shortlisted${sentThreadCount ? ` · ${sentThreadCount} contacted` : " · ready for review"}`
+        : "Find matches or reuse a saved vendor",
     },
     quotes: {
       title: "Quotes",
@@ -291,14 +301,14 @@ export default function App() {
                     onClick={() => openStep("suppliers")}
                     className="w-full rounded-lg bg-ledger px-4 py-2.5 text-sm font-medium text-white hover:bg-ledger-deep"
                   >
-                    Continue to suppliers
+                    Build supplier shortlist
                   </button>
                 ) : null}
               </>
             ),
             suppliers: (
               <>
-                <SupplierOutreach needId={activeNeed?._id} needs={needs} suppliers={suppliers} threads={threads} />
+                <SupplierOutreach key={activeNeed?._id} needId={activeNeed?._id} suppliers={suppliers} threads={threads} />
                 {available.quotes ? (
                   <button
                     type="button"
@@ -308,7 +318,7 @@ export default function App() {
                     Continue to quotes
                   </button>
                 ) : (
-                  <p className="text-sm text-soft">Add a supplier to paste a quote without sending a request.</p>
+                  <p className="text-sm text-soft">Shortlist at least one supplier for this requirement before moving to quotes.</p>
                 )}
               </>
             ),
@@ -321,7 +331,7 @@ export default function App() {
                     certRequired={activeNeed?.certRequired}
                     inboxEmail={inboxEmail}
                     needId={activeNeed?._id}
-                    suppliers={suppliers}
+                    suppliers={relevantSuppliers}
                   />
                 ) : (
                   <div className="text-sm text-soft">Create a requirement to collect quotes.</div>

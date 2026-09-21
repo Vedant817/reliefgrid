@@ -152,7 +152,7 @@ export const approveAndSendClarification = action({
     const dispatchKey = `clarification-${String(thread._id)}-${await dispatchHash(question)}`;
     const claim: any = await ctx.runMutation(internal.rfq.claimClarificationSend, { threadId: thread._id, dispatchKey });
     const { sent } = await guardedProviderSend(ctx, {
-      ownerId: identity.tokenIdentifier,
+      ownerId: offer.ownerId,
       rateLimit: claim.reconcile ? null : { name: "sendClarification", key: String(args.offerId) },
       operation: "send_clarification",
       failureRequestId: String(thread._id),

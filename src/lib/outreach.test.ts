@@ -62,9 +62,10 @@ describe("workspace derivations", () => {
   });
 
   test("next step walks the pipeline in order", () => {
-    const base = { hasNeed: true, supplierCount: 1, threadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
+    const base = { hasNeed: true, supplierCount: 1, threadCount: 1, sentThreadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
     expect(nextStepForWorkspace({ ...base, hasNeed: false })).toMatch(/requirement/);
-    expect(nextStepForWorkspace({ ...base, supplierCount: 0, threadCount: 0, offerCount: 0 })).toMatch(/Add a supplier/);
+    expect(nextStepForWorkspace({ ...base, supplierCount: 0, threadCount: 0, sentThreadCount: 0, offerCount: 0 })).toMatch(/Find matching suppliers/);
+    expect(nextStepForWorkspace({ ...base, sentThreadCount: 0, offerCount: 0 })).toMatch(/approve supplier outreach/);
     expect(nextStepForWorkspace({ ...base, offerCount: 0 })).toMatch(/paste a quote/);
     expect(nextStepForWorkspace({ ...base, verifiedCount: 0 })).toMatch(/evidence/);
     expect(nextStepForWorkspace({ ...base, verifiedCount: 0, requiresEvidence: false })).toMatch(/approve the plan/);
@@ -74,7 +75,7 @@ describe("workspace derivations", () => {
   });
 
   test("flow step follows the same pipeline as next-step copy", () => {
-    const base = { hasNeed: true, supplierCount: 1, threadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
+    const base = { hasNeed: true, supplierCount: 1, threadCount: 1, sentThreadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
     expect(flowStepForWorkspace({ ...base, hasNeed: false })).toBe("requirement");
     expect(flowStepForWorkspace({ ...base, supplierCount: 0, threadCount: 0, offerCount: 0 })).toBe("suppliers");
     expect(flowStepForWorkspace({ ...base, offerCount: 0 })).toBe("quotes");
@@ -86,11 +87,12 @@ describe("workspace derivations", () => {
   });
 
   test("quotes are available after a supplier is added, decide after eligible quotes", () => {
-    const none = { hasNeed: false, supplierCount: 0, threadCount: 0, offerCount: 0, verifiedCount: 0, requiresEvidence: false, hasPlan: false, planApproved: false };
+    const none = { hasNeed: false, supplierCount: 0, threadCount: 0, sentThreadCount: 0, offerCount: 0, verifiedCount: 0, requiresEvidence: false, hasPlan: false, planApproved: false };
     expect(flowStepAvailable("requirement", none)).toBe(true);
     expect(flowStepAvailable("suppliers", none)).toBe(false);
     expect(flowStepAvailable("quotes", { ...none, hasNeed: true })).toBe(false);
-    expect(flowStepAvailable("quotes", { ...none, hasNeed: true, supplierCount: 1 })).toBe(true);
+    expect(flowStepAvailable("quotes", { ...none, hasNeed: true, supplierCount: 1 })).toBe(false);
+    expect(flowStepAvailable("quotes", { ...none, hasNeed: true, supplierCount: 1, threadCount: 1 })).toBe(true);
     expect(flowStepAvailable("decide", { ...none, hasNeed: true, offerCount: 1 })).toBe(true);
     expect(flowStepAvailable("decide", { ...none, hasNeed: true, offerCount: 1, requiresEvidence: true, verifiedCount: 0 })).toBe(false);
   });

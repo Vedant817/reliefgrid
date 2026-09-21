@@ -63,7 +63,7 @@ export type WorkspaceFlowStep = "requirement" | "suppliers" | "quotes" | "decide
 
 export const WORKSPACE_FLOW_STEPS: { id: WorkspaceFlowStep; label: string }[] = [
   { id: "requirement", label: "Requirement" },
-  { id: "suppliers", label: "Suppliers" },
+  { id: "suppliers", label: "Shortlist" },
   { id: "quotes", label: "Quotes" },
   { id: "decide", label: "Decide" },
 ];
@@ -72,6 +72,7 @@ export type WorkspaceFlowArgs = {
   hasNeed: boolean;
   supplierCount: number;
   threadCount: number;
+  sentThreadCount: number;
   offerCount: number;
   verifiedCount: number;
   requiresEvidence: boolean;
@@ -81,9 +82,10 @@ export type WorkspaceFlowArgs = {
 
 export function nextStepForWorkspace(args: WorkspaceFlowArgs) {
   if (!args.hasNeed) return "Create your first requirement to begin.";
-  if (args.supplierCount === 0 && args.threadCount === 0 && args.offerCount === 0) {
-    return "Add a supplier, then send a request or paste a quote.";
+  if (args.threadCount === 0 && args.offerCount === 0) {
+    return "Find matching suppliers and build a shortlist for this requirement.";
   }
+  if (args.sentThreadCount === 0 && args.offerCount === 0) return "Review the shortlist, then approve supplier outreach.";
   if (args.offerCount === 0) return "Waiting for replies — or paste a quote you already received.";
   if (args.requiresEvidence && args.verifiedCount < args.offerCount) return "Verify the remaining certification evidence.";
   if (!args.hasPlan) return "Compute the recommendation from the quotes on hand.";
@@ -95,7 +97,8 @@ export function nextStepForWorkspace(args: WorkspaceFlowArgs) {
 // action, mapped onto the four-step workspace.
 export function flowStepForWorkspace(args: WorkspaceFlowArgs): WorkspaceFlowStep {
   if (!args.hasNeed) return "requirement";
-  if (args.supplierCount === 0 && args.threadCount === 0 && args.offerCount === 0) return "suppliers";
+  if (args.threadCount === 0 && args.offerCount === 0) return "suppliers";
+  if (args.sentThreadCount === 0 && args.offerCount === 0) return "suppliers";
   if (args.offerCount === 0) return "quotes";
   if (args.requiresEvidence && args.verifiedCount < args.offerCount) return "quotes";
   return "decide";
@@ -108,7 +111,7 @@ export function flowStepAvailable(
   if (step === "requirement") return true;
   if (step === "suppliers") return args.hasNeed;
   if (step === "quotes") {
-    return args.hasNeed && (args.supplierCount > 0 || args.threadCount > 0 || args.offerCount > 0);
+    return args.hasNeed && (args.threadCount > 0 || args.offerCount > 0);
   }
   return Boolean(
     args.hasPlan || (args.offerCount > 0 && (!args.requiresEvidence || args.verifiedCount >= args.offerCount)),

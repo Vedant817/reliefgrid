@@ -1,6 +1,6 @@
 # ReliefGrid user guide
 
-This guide describes the real application flow. A new workspace starts empty; the application does not load sample incidents, suppliers, offers, evidence, or plans.
+This guide describes the real application flow. Requirements, offers, evidence, and plans start empty. Each account includes four clearly labeled demo suppliers for shortlisting and pasted-quote demos; their reserved placeholder addresses cannot receive email.
 
 ## 1. Start the application locally
 
@@ -52,14 +52,14 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
 
 ## 2. Use the application
 
-1. On first load, create an account with email and password (Convex Auth). Click **Create a requirement** or **New requirement**. The workspace is private to that account and starts empty.
+1. On first load, create an account with email and password (Convex Auth). Click **Create a requirement** or **New requirement**. The workspace is private to that account and includes its own starter directory of four demo suppliers.
 2. Enter the requirement name and context.
 3. For every line item, enter the real item name, quantity, and budget. Add more rows when one purchase contains several items.
 4. Enter the required arrival time and delivery location. If certification matters, enter both the exact certification name and an exact model, product, or lot identifier used to match external evidence.
 5. Click **Create requirement**. The requirement and its line items appear in the left column.
-6. Under **Supplier outreach**, click **Add supplier** and enter a real supplier name, deliverable email address, and service region. Addresses under special-use test/example domains are rejected.
-7. Optionally click **Find suppliers** to search the public web. Firecrawl is tried first; Exa is used automatically when Firecrawl is unavailable or out of credits. Search results only prefill a name; you must still provide and review the real contact email.
-8. Click **Approve & send request** for a supplier. This explicit approval creates or maps the request inbox and sends the request through AgentMail. For several line items, **Approve & send all** sends the selected supplier list across all requests.
+6. In **Shortlist suppliers**, choose from **Saved vendors**, use **Find matching suppliers** to search the public web, or add a supplier manually. Firecrawl is tried first; Exa is used automatically when Firecrawl is unavailable or out of credits. Review every discovered contact before outreach.
+7. For a no-email demo, shortlist one of the clearly labeled demo suppliers, continue to **Quotes**, and paste a sample response. Demo suppliers use reserved placeholder addresses, so the application disables RFQ and award email to them.
+8. For real outreach, add or discover a supplier with a deliverable email, then click **Approve & send request**. This explicit approval creates or maps the request inbox and sends the request through AgentMail. For several line items, **Approve & send all** sends the selected real suppliers across all requests.
 9. Wait for the supplier to reply, or paste a quote you already received. Inbound AgentMail replies and pasted quotes use the same OpenAI (Groq fallback) extraction path. The quote list updates in real time.
 10. If an offer is ambiguous, click **Draft targeted clarification**, review the question, then click **Approve & send**. Nothing is sent merely because a draft was generated.
 11. If certification is required, paste an authoritative HTTPS evidence page into **Independent certification check** and click **Verify**. The page must contain the exact certification and product/model identifier. Supporting or non-matching pages remain under review.
@@ -114,8 +114,8 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
 
 5. Publish the generated `dist` directory with your static host, or configure the host to run the same Convex deploy/build command using a production deploy key.
 6. Open the deployed site and test with controlled real provider accounts: create one requirement, send one RFQ to an address you control, reply, verify ingestion, compute a plan, approve it, and confirm every outbound message.
-7. Confirm the production Convex deployment starts with no records unless you intentionally imported real business data.
+7. Confirm the production Convex deployment contains no requirements, offers, evidence, or plans unless you intentionally imported real business data. The four labeled demo suppliers per account are expected starter records and cannot receive email.
 
 ## Production identity warning
 
-The UI uses Convex Auth with email and password. Each account has a private workspace that starts empty. Organization roles (coordinator vs approver), SSO, retention policy, and customer-specific approval rules remain production rollout requirements.
+The UI uses Convex Auth with email and password. Each account has a private workspace: operational records and its copies of the starter suppliers are not shared with other accounts. Organization roles (coordinator vs approver), SSO, retention policy, and customer-specific approval rules remain production rollout requirements.

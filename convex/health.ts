@@ -2,7 +2,8 @@ import { query, internalMutation } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
-import { requireOwnerId } from "./model/auth";
+import type { QueryCtx } from "./_generated/server";
+import { requireOwnerId, requireOwnerKeys } from "./model/auth";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -38,6 +39,33 @@ const providerRun = v.object({
   ownerId: v.optional(v.string()),
 });
 
+async function recentOwnerRuns(ctx: QueryCtx, limit: number) {
+  const { keys, legacyOwnerPrefix } = await requireOwnerKeys(ctx);
+  const seen = new Set<string>();
+  const rows: Doc<"providerRuns">[] = [];
+  for (const ownerId of keys) {
+    const matches = await ctx.db.query("providerRuns").withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId)).order("desc").take(limit);
+    for (const row of matches as Doc<"providerRuns">[]) {
+      if (seen.has(String(row._id))) continue;
+      seen.add(String(row._id));
+      rows.push(row);
+    }
+  }
+  if (legacyOwnerPrefix) {
+    const matches = await ctx.db
+      .query("providerRuns")
+      .withIndex("by_owner_and_at", (q) => q.gte("ownerId", legacyOwnerPrefix).lt("ownerId", `${legacyOwnerPrefix}\uffff`))
+      .order("desc")
+      .take(limit);
+    for (const row of matches as Doc<"providerRuns">[]) {
+      if (seen.has(String(row._id))) continue;
+      seen.add(String(row._id));
+      rows.push(row);
+    }
+  }
+  return rows.sort((a, b) => b.at - a.at).slice(0, limit);
+}
+
 // Backend integration health reports live/degraded/not_configured
 // from env presence and recent providerRuns. Never exposes secrets.
 export const getProviderHealth = query({
@@ -49,7 +77,6 @@ export const getProviderHealth = query({
     lastRun: v.union(providerRun, v.null()),
   })),
   handler: async (ctx) => {
-    const ownerId = await requireOwnerId(ctx);
     const env = process.env;
     const hasOpenAI = !!env.OPENAI_API_KEY;
     const hasGroq = !!env.GROQ_API_KEY;
@@ -57,7 +84,7 @@ export const getProviderHealth = query({
     const hasExa = !!env.EXA_API_KEY;
     const hasAgentMail = !!env.AGENTMAIL_API_KEY;
 
-    const recent = await ctx.db.query("providerRuns").withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId)).order("desc").take(20);
+    const recent = await recentOwnerRuns(ctx, 20);
 
     const lastBy = (provider: string) => recent.find((r) => r.provider === provider) ?? null;
 
@@ -141,9 +168,8 @@ export const listProviderRuns = query({
   args: { limit: v.optional(v.number()) },
   returns: v.array(providerRun),
   handler: async (ctx, args) => {
-    const ownerId = await requireOwnerId(ctx);
     const limit = Math.max(1, Math.min(Math.floor(args.limit ?? 20), 100));
-    return await ctx.db.query("providerRuns").withIndex("by_owner_and_at", (q) => q.eq("ownerId", ownerId)).order("desc").take(limit);
+    return await recentOwnerRuns(ctx, limit);
   },
 });
 

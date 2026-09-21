@@ -8,15 +8,22 @@ import { searchViaExa } from "../lib/exa";
 import { WebResearchError, recordWebFailures, resolveWebResearch, withWebResearchFallback } from "../lib/webResearch";
 import { recordRun } from "../lib/runs";
 import { checkLimit } from "../rateLimits";
+import { supplierRegionLabel } from "../lib/supplierDiscovery";
 
 // Supplier discovery: Firecrawl searches the public web first, with Exa as a
 // live fallback when Firecrawl is unavailable or out of credits. It returns
-// candidates with source URLs. Pure read — nothing is written, and adding a
-// supplier still requires a human to supply a real contact email.
+// candidates with source URLs and a public contact email when the source
+// exposes one. Pure read — nothing is written until the buyer shortlists one.
 export const discoverSuppliers = action({
   args: { needId: v.id("needs") },
   returns: v.object({
-    suppliers: v.array(v.object({ name: v.string(), url: v.string(), snippet: v.string() })),
+    suppliers: v.array(v.object({
+      name: v.string(),
+      url: v.string(),
+      snippet: v.string(),
+      contactEmail: v.optional(v.string()),
+      region: v.string(),
+    })),
     providerStatus: v.literal("live"),
     provider: v.union(v.literal("firecrawl"), v.literal("exa")),
   }),
@@ -26,7 +33,9 @@ export const discoverSuppliers = action({
     const ownerId: string = access.ownerId;
     await checkLimit(ctx, "discoverSuppliers", `discover:${String(args.needId)}`, ownerId);
     const startedAt = Date.now();
-    const searchQuery = `suppliers ${need.item} ${need.certRequired ?? ""}`.replace(/\s+/g, " ").trim();
+    const searchQuery = `official supplier distributor ${need.item} ${need.certRequired ?? ""} ${need.deliveryLocation ?? ""} sales contact email`
+      .replace(/\s+/g, " ")
+      .trim();
     const providers = resolveWebResearch();
     let retrieval;
     try {
@@ -55,7 +64,13 @@ export const discoverSuppliers = action({
         }
       })
       .slice(0, 5)
-      .map((hit) => ({ name: hit.title, url: hit.url, snippet: hit.snippet }));
+      .map((hit) => ({
+        name: hit.title,
+        url: hit.url,
+        snippet: hit.snippet,
+        contactEmail: hit.contactEmail,
+        region: supplierRegionLabel(hit.url),
+      }));
     await recordRun(ctx, {
       provider: retrieval.provider,
       operation: "discover_suppliers",

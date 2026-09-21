@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("production workspace opens without seeded records or demo controls", async ({ page }) => {
+test("production landing explains the safe starter directory without demo controls", async ({ page }) => {
   const errors: string[] = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -11,6 +11,7 @@ test("production workspace opens without seeded records or demo controls", async
   await expect(page.getByText("ReliefGrid", { exact: true })).toBeVisible();
   await expect(page.getByText(/sample scenario/i)).toHaveCount(0);
   await expect(page.getByText(/demo controls/i)).toHaveCount(0);
+  await expect(page.getByText(/starter vendor directory/i)).toBeVisible();
   await expect(page.getByRole("form")).toBeVisible();
   await expect(page.getByLabel("Email")).toBeVisible();
   await expect(page.getByRole("button", { name: "Create a requirement" })).toHaveCount(0);

@@ -1,11 +1,29 @@
 "use node";
 
 import { v } from "convex/values";
-import { internalAction } from "../_generated/server";
+import { action, internalAction } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { replyAgentMailMessage, resolveAgentMail, sendAgentMailMessage } from "../lib/agentmail";
 import { guardedProviderSend, IDEMPOTENCY_WINDOW_MS } from "../lib/sendGuard";
 import { recordRun } from "../lib/runs";
+
+export const approvePlanAndSendNotices = action({
+  args: {
+    planId: v.id("allocationPlans"),
+    notes: v.optional(v.string()),
+  },
+  returns: v.object({
+    planId: v.id("allocationPlans"),
+    sent: v.number(),
+    skipped: v.number(),
+    failed: v.number(),
+  }),
+  handler: async (ctx, args): Promise<{ planId: typeof args.planId; sent: number; skipped: number; failed: number }> => {
+    const planId = await ctx.runMutation(internal.allocations.approvePlan, args);
+    const dispatch = await ctx.runAction(internal.actions.awards.sendAwardNotices, { planId });
+    return { planId, ...dispatch };
+  },
+});
 
 export const sendAwardNotices = internalAction({
   args: { planId: v.id("allocationPlans") },
@@ -25,6 +43,10 @@ export const sendAwardNotices = internalAction({
     };
     for (const row of dispatch.threads) {
       if (!row.supplier) continue;
+      if (row.supplier.isDemo) {
+        skipped++;
+        continue;
+      }
       const kind = row.allocatedQty > 0 ? "award" as const : "decline" as const;
       const claim = await ctx.runMutation(internal.awardNotices.claimNotice, {
         planId: args.planId,

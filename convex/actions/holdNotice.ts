@@ -23,14 +23,14 @@ export const approveAndSendHoldNotice = action({
   ): Promise<{ noticeId: Id<"holdNotices">; agentmailThreadId: string; providerStatus: "live" }> => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Authentication required");
-    await ctx.runQuery(internal.evidenceDrift.getHoldNoticeForApproval, { noticeId: args.noticeId });
+    const approval: any = await ctx.runQuery(internal.evidenceDrift.getHoldNoticeForApproval, { noticeId: args.noticeId });
     const approver = identity.name ?? identity.tokenIdentifier;
     const mail = resolveAgentMail();
     if (!mail.apiKey) throw new Error("no AgentMail key configured (AGENTMAIL_API_KEY)");
     const claim: any = await ctx.runMutation(internal.evidenceDrift.claimHoldNoticeSend, { noticeId: args.noticeId });
     const notice = claim.notice;
     const { sent } = await guardedProviderSend(ctx, {
-      ownerId: identity.tokenIdentifier,
+      ownerId: approval.ownerId,
       rateLimit: claim.reconcile ? null : { name: "sendHoldNotice", key: String(args.noticeId) },
       operation: "send_hold_notice",
       failureRequestId: String(args.noticeId),

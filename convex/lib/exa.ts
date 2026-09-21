@@ -1,4 +1,5 @@
 import type { ScrapedSource, SearchHit } from "./firecrawl";
+import { extractPublicContactEmail } from "./supplierDiscovery";
 
 declare const process: { env: Record<string, string | undefined> };
 
@@ -79,7 +80,13 @@ export async function searchViaExa(
     const url = typeof item.url === "string" ? item.url : "";
     if (!url || hits.some((hit) => hit.url === url)) continue;
     const title = typeof item.title === "string" && item.title.trim() ? item.title.trim() : url;
-    hits.push({ url, title: title.slice(0, 120), snippet: excerpt(item).slice(0, 200) });
+    const sourceExcerpt = excerpt(item);
+    hits.push({
+      url,
+      title: title.slice(0, 120),
+      snippet: sourceExcerpt.slice(0, 200),
+      contactEmail: extractPublicContactEmail(sourceExcerpt),
+    });
     if (hits.length >= limit) break;
   }
   return {

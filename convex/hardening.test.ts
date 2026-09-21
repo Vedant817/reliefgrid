@@ -78,6 +78,42 @@ describe("need validators", () => {
   });
 });
 
+describe("requirement creation", () => {
+  test("creates the incident and every line item in one transaction", async () => {
+    const t = asUser(makeT(), "requirement-user");
+    const result = await t.mutation(api.incidents.createRequirement, {
+      title: "Shelter supplies",
+      deadlineAt: future(),
+      deliveryLocation: "Central shelter",
+      timezone: "Asia/Calcutta",
+      items: [
+        { item: "Water", qty: 100, budgetCents: 50000 },
+        { item: "Blankets", qty: 40, budgetCents: 80000 },
+      ],
+    });
+    const incidents: any[] = await t.query(api.incidents.listIncidents, {});
+    const needs: any[] = await t.query(api.needs.listNeedsByIncident, { incidentId: result.incidentId });
+    expect(incidents).toHaveLength(1);
+    expect(result.needIds).toHaveLength(2);
+    expect(needs.map((need) => need.item).sort()).toEqual(["Blankets", "Water"]);
+  });
+
+  test("rejects the whole requirement when any line item is invalid", async () => {
+    const t = asUser(makeT(), "invalid-requirement-user");
+    await expect(t.mutation(api.incidents.createRequirement, {
+      title: "Invalid supplies",
+      deadlineAt: future(),
+      deliveryLocation: "Central shelter",
+      timezone: "Asia/Calcutta",
+      items: [
+        { item: "Water", qty: 100, budgetCents: 50000 },
+        { item: "Blankets", qty: 0, budgetCents: 80000 },
+      ],
+    })).rejects.toThrow(/quantity/);
+    expect(await t.query(api.incidents.listIncidents, {})).toHaveLength(0);
+  });
+});
+
 describe("offer guards", () => {
   test("rejects negative price and divergent replays, dedups identical replays", async () => {
     const t = asUser(makeT());
@@ -100,6 +136,22 @@ describe("offer guards", () => {
 });
 
 describe("approval state machine", () => {
+  test("public approval waits for notice dispatch and returns its outcome", async () => {
+    const t = asUser(makeT(), "award-action-user", "Award Action User");
+    const { needId } = await seedNeed(t);
+    const suppliers: any[] = await seedSuppliers(t);
+    await t.mutation(internal.offers.upsertOfferVersion, {
+      needId, supplierId: suppliers[0]._id, qty: 100, unitPriceCents: 1000, arrivalAt: Date.now() + 3600000,
+      certStatus: "verified", conditions: [], confidence: 0.97,
+      rawEmailId: "award-action", rawBody: "100 units", language: "en",
+    });
+    const computed: any = await t.mutation(api.allocations.computeAllocation, { needId });
+    const result = await t.action(api.actions.awards.approvePlanAndSendNotices, { planId: computed.planId });
+    expect(result).toMatchObject({ planId: computed.planId, sent: 0, failed: 0 });
+    const plans: any[] = await t.query(api.allocations.listAllocationPlans, { needId });
+    expect(plans[0].status).toBe("approved");
+  });
+
   test("guards approver, double-approve, retired plans, and enforces single award", async () => {
     const raw = makeT();
     const t = asUser(raw);
@@ -112,10 +164,10 @@ describe("approval state machine", () => {
     });
     const first: any = await t.mutation(api.allocations.computeAllocation, { needId });
     expect(first.planId).not.toBeNull();
-    await expect(raw.mutation(api.allocations.approvePlan, { planId: first.planId })).rejects.toThrow(/Authentication/);
-    await t.mutation(api.allocations.approvePlan, { planId: first.planId });
+    await expect(raw.mutation(internal.allocations.approvePlan, { planId: first.planId })).rejects.toThrow(/Authentication/);
+    await t.mutation(internal.allocations.approvePlan, { planId: first.planId });
     await expect(
-      t.mutation(api.allocations.approvePlan, { planId: first.planId }),
+      t.mutation(internal.allocations.approvePlan, { planId: first.planId }),
     ).rejects.toThrow(/proposed/);
     // Identical recompute dedups instead of minting a duplicate.
     const again: any = await t.mutation(api.allocations.computeAllocation, { needId });
@@ -128,13 +180,13 @@ describe("approval state machine", () => {
     });
     const second: any = await t.mutation(api.allocations.computeAllocation, { needId });
     expect(second.planId).not.toBe(first.planId);
-    await t.mutation(api.allocations.approvePlan, { planId: second.planId });
+    await t.mutation(internal.allocations.approvePlan, { planId: second.planId });
     const plans: any[] = await t.query(api.allocations.listAllocationPlans, { needId });
     const statuses = Object.fromEntries(plans.map((p) => [p._id, p.status]));
     expect(statuses[first.planId]).toBe("superseded");
     expect(statuses[second.planId]).toBe("approved");
     await expect(
-      t.mutation(api.allocations.approvePlan, { planId: first.planId }),
+      t.mutation(internal.allocations.approvePlan, { planId: first.planId }),
     ).rejects.toThrow(/proposed/);
   });
 
@@ -149,7 +201,7 @@ describe("approval state machine", () => {
       rawEmailId: "t-c", rawBody: "100 units", language: "en",
     });
     const plan: any = await t.mutation(api.allocations.computeAllocation, { needId });
-    await t.mutation(api.allocations.approvePlan, { planId: plan.planId });
+    await t.mutation(internal.allocations.approvePlan, { planId: plan.planId });
     const plans: any[] = await t.query(api.allocations.listAllocationPlans, { needId });
     expect(plans[0].approval.approvedBy).toBe("Server User");
   });
@@ -177,6 +229,36 @@ describe("internal thread state", () => {
 });
 
 describe("authorization and decision integrity", () => {
+  test("a new session restores legacy session-owned workspace rows without exposing them cross-account", async () => {
+    const raw = makeT();
+    const issuer = "https://tests.reliefgrid.test";
+    const stableUserId = "user-stable";
+    const legacyOwnerId = `${issuer}|${stableUserId}|session-old`;
+    const incidentId = await raw.run(async (ctx) => await ctx.db.insert("incidents", {
+      title: "Legacy workspace",
+      status: "draft",
+      deadlineAt: future(),
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      ownerId: legacyOwnerId,
+    }));
+    await raw.run(async (ctx) => await ctx.db.insert("suppliers", {
+      name: "Legacy Supplier",
+      contactEmail: "legacy@supplier.org",
+      region: "Legacy Region",
+      verified: false,
+      createdAt: Date.now(),
+      ownerId: legacyOwnerId,
+    }));
+
+    const returning = raw.withIdentity({ subject: `${stableUserId}|session-new`, issuer });
+    const stranger = raw.withIdentity({ subject: "other-user|session-new", issuer });
+    expect((await returning.query(api.incidents.listIncidents, {})).map((row: any) => row._id)).toContain(incidentId);
+    expect((await returning.query(api.suppliers.listSuppliers, {})).map((row: any) => row.name)).toContain("Legacy Supplier");
+    await expect(returning.query(api.incidents.getIncident, { incidentId })).resolves.toMatchObject({ title: "Legacy workspace" });
+    await expect(stranger.query(api.incidents.getIncident, { incidentId })).rejects.toThrow(/not found/i);
+  });
+
   test("one authenticated user cannot read or mutate another user's incident graph", async () => {
     const raw = makeT();
     const owner = asUser(raw, "owner-a", "Owner A");
@@ -200,7 +282,7 @@ describe("authorization and decision integrity", () => {
     const plan: any = await t.mutation(api.allocations.computeAllocation, { needId });
     expect(plan.feasible).toBe(false);
     expect(plan.shortfallQty).toBe(60);
-    await expect(t.mutation(api.allocations.approvePlan, { planId: plan.planId })).rejects.toThrow(/incomplete plan/);
+    await expect(t.mutation(internal.allocations.approvePlan, { planId: plan.planId })).rejects.toThrow(/incomplete plan/);
   });
 
   test("a supplier certification claim stays out of allocation until source verification promotes it", async () => {
@@ -251,7 +333,7 @@ describe("authorization and decision integrity", () => {
       sourceAuthority: "authoritative",
       matched: true,
     });
-    await expect(t.mutation(api.allocations.approvePlan, { planId: plan.planId })).rejects.toThrow(/stale/i);
+    await expect(t.mutation(internal.allocations.approvePlan, { planId: plan.planId })).rejects.toThrow(/stale/i);
   });
 
   test("failed evidence is ineligible even when no certification is required", async () => {
@@ -485,7 +567,7 @@ describe("authorization and decision integrity", () => {
     });
     const plans: any[] = await t.query(api.allocations.listAllocationPlans, { needId });
     expect(plans[0].totalQty).toBe(100);
-    await t.mutation(api.allocations.approvePlan, { planId: plans[0]._id });
+    await t.mutation(internal.allocations.approvePlan, { planId: plans[0]._id });
     const approved: any[] = await t.query(api.allocations.listAllocationPlans, { needId });
     expect(approved[0].status).toBe("approved");
   });
@@ -539,7 +621,7 @@ describe("authorization and decision integrity", () => {
     expect(retried.shouldSend).toBe(true);
     expect(retried.shouldReconcile).toBe(false);
 
-    await t.mutation(api.allocations.approvePlan, { planId: computed.planId });
+    await t.mutation(internal.allocations.approvePlan, { planId: computed.planId });
     const dispatch: any = await t.query(internal.awardNotices.getDispatch, { planId: computed.planId });
     expect(dispatch.ownerId).toContain("award-owner");
     expect(dispatch.threads).toHaveLength(2);

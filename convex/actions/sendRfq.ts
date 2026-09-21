@@ -19,7 +19,7 @@ export const approveAndSendRfq = action({
     const dispatchKey = `rfq-${String(args.threadId)}`;
     const { subject, text } = buildRfqEmail(data.need, data.supplier.name);
     const { sent } = await guardedProviderSend(ctx, {
-      ownerId: identity.tokenIdentifier,
+      ownerId: data.ownerId,
       rateLimit: data.reconcile ? null : { name: "sendRfq", key: String(args.threadId) },
       operation: "send_rfq",
       failureRequestId: String(args.threadId),

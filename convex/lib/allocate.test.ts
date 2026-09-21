@@ -29,6 +29,23 @@ describe("allocateOffers abstention", () => {
     expect(result.selected).toHaveLength(1);
   });
 
+  it("does not require certification evidence when the need has no certification constraint", () => {
+    const noCertificationNeed = { ...need, certRequired: undefined };
+    const result = allocateOffers([
+      offer({
+        certStatus: "unverified",
+        fieldEvidence: {
+          qty: { confidence: 0.99 },
+          price: { confidence: 0.99 },
+          arrival: { confidence: 0.99 },
+          cert: { confidence: 1 },
+        },
+      }),
+    ], noCertificationNeed);
+    expect(result.totalQty).toBe(10);
+    expect(result.selected).toHaveLength(1);
+  });
+
   it("evaluates overrides without mutating its inputs", () => {
     const late = offer({ arrivalAt: need.deadlineAt + 16 * 3600000, unitPriceCents: 300 });
     const original = JSON.stringify(late);

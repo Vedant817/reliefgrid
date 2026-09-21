@@ -63,6 +63,8 @@ export default defineSchema({
     verified: v.boolean(),
     createdAt: v.number(),
     ownerId: v.optional(v.string()),
+    isDemo: v.optional(v.boolean()),
+    demoKey: v.optional(v.string()),
   })
     .index("by_email", ["contactEmail"])
     .index("by_owner", ["ownerId"])
