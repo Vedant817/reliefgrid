@@ -1,65 +1,83 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { captureBrowserErrors, createRequirement, signUp } from "./helpers";
 
-function captureRuntimeErrors(page: Page) {
-  const errors: string[] = [];
-  page.on("console", (message) => {
-    if (message.type() === "error") errors.push(message.text());
-  });
-  page.on("pageerror", (error) => errors.push(error.message));
-  return errors;
-}
+test("fresh coordinator completes the approval-ready golden path", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The live extraction golden path runs once on desktop.");
+  const browserErrors = captureBrowserErrors(page);
 
-async function signUp(page: Page, suffix: string) {
-  await page.goto("/");
-  await page.getByLabel("Email").fill(`coord-${suffix}@reliefgrid.test`);
-  await page.getByLabel("Password").fill("test-pass-12");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page.getByRole("button", { name: "Sign out" })).toBeVisible({ timeout: 20_000 });
-}
+  await signUp(page, "golden");
+  await createRequirement(page);
 
-test("coordinator can create a requirement, search it, and add a supplier", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "desktop", "desktop workflow");
-  const errors = captureRuntimeErrors(page);
-  const suffix = Date.now().toString(36);
-  const title = `Browser validation ${suffix}`;
-
-  await signUp(page, suffix);
-  await page.getByRole("button", { name: /Create a requirement|New requirement/ }).first().click();
-  const dialog = page.getByRole("dialog", { name: "Create requirement" });
-  await dialog.getByLabel("Requirement name").fill(title);
-  await dialog.getByLabel("Item").fill("Sterile field dressings");
-  await dialog.getByLabel("Quantity").fill("25");
-  await dialog.getByLabel("Budget, USD").fill("500");
-  const deadline = new Date(Date.now() + 24 * 60 * 60 * 1000);
-  const deadlineValue = new Date(deadline.getTime() - deadline.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
-  await dialog.getByLabel("Required arrival").fill(deadlineValue);
-  await dialog.getByLabel("Delivery location").fill("North receiving bay");
-  await dialog.getByRole("button", { name: "Create requirement" }).click();
-  await expect(page.getByText(title, { exact: true })).toBeVisible();
-
-  await page.getByRole("navigation", { name: "Workspace steps" }).getByRole("button", { name: /Requirement/ }).click();
-  await page.getByPlaceholder("Search requirements…").fill(suffix);
-  await expect(page.getByText(title, { exact: true })).toBeVisible();
-  await page.getByPlaceholder("Search requirements…").fill("");
-  await page.getByRole("navigation", { name: "Workspace steps" }).getByRole("button", { name: /Suppliers/ }).click();
-  await page.getByRole("button", { name: "Add supplier" }).click();
-  await page.getByLabel("Supplier name").fill(`Supplier ${suffix}`);
-  await page.getByLabel("Supplier email").fill(`quotes-${suffix}@example-vendor.org`);
-  await page.getByLabel("Supplier region").fill("North region");
-  await page.getByRole("button", { name: "Add without sending" }).click();
-  await expect(page.getByRole("status")).toContainText("Supplier added");
-  await expect(page.getByRole("button", { name: "Approve & send request" }).last()).toBeEnabled();
+  await expect(page.getByText("Demo General Relief Wholesale", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await page.getByRole("button", { name: "Shortlist", exact: true }).first().click();
+  await expect(page.getByText("1 selected")).toBeVisible();
   await page.getByRole("button", { name: "Continue to quotes" }).click();
-  await expect(page.getByLabel("Quote email")).toBeVisible();
-  expect(errors).toEqual([]);
+
+  await expect(page.getByRole("button", { name: "Use sample quote" })).toBeVisible();
+  await page.getByRole("button", { name: "Use sample quote" }).click();
+  await expect(page.getByText(/1 offers, 100 units quoted/i)).toBeVisible({ timeout: 60_000 });
+
+  const quoteSurface = await page.locator("body").innerText();
+  expect(quoteSurface).not.toContain("Jan 1");
+  expect(quoteSurface).not.toContain(".example.invalid");
+  expect(quoteSurface).not.toContain("Allocator abstained");
+  expect(quoteSurface).toContain("No certification required");
+
+  await page.getByRole("button", { name: "Continue to decide" }).click();
+  await expect(page.getByText("Proposed", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Full coverage", { exact: true })).toBeVisible();
+  const approve = page.getByRole("button", { name: "Approve plan" });
+  await expect(approve).toBeEnabled();
+  await approve.click();
+  await expect(page.getByText("Approved", { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("button", { name: "Create account" })).toBeVisible({ timeout: 15_000 });
+  await page.waitForTimeout(1_000);
+  expect(browserErrors).toEqual([]);
 });
 
-test("production layout fits a mobile viewport", async ({ page }, testInfo) => {
-  test.skip(testInfo.project.name !== "mobile", "mobile workflow");
-  const errors = captureRuntimeErrors(page);
-  await page.goto("/");
-  await expect(page.getByText("ReliefGrid", { exact: true })).toBeVisible();
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
-  expect(overflow).toBeLessThanOrEqual(1);
-  expect(errors).toEqual([]);
+test("missing delivery date produces an explicit infeasible state", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "desktop", "The live negative extraction path runs once on desktop.");
+  const browserErrors = captureBrowserErrors(page);
+
+  await signUp(page, "missing-arrival");
+  await createRequirement(page);
+  await page.getByRole("button", { name: "Shortlist", exact: true }).first().click();
+  await expect(page.getByText("1 selected")).toBeVisible({ timeout: 15_000 });
+  await page.getByRole("button", { name: "Continue to quotes" }).click();
+
+  await page.getByLabel("Quote email").fill([
+    "Subject: Quote for emergency water filters",
+    "We can supply 100 units at $10.00 per unit.",
+    "The delivery date will be confirmed after dispatch planning.",
+    "No certification was requested.",
+  ].join("\n"));
+  await page.getByRole("button", { name: "Extract quote", exact: true }).click();
+  await expect(page.getByText("Arrival not confirmed", { exact: true })).toBeVisible({ timeout: 60_000 });
+
+  await page.getByRole("button", { name: "Continue to decide" }).click();
+  await expect(page.getByRole("heading", { name: "No feasible recommendation" })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Delivery date needs confirmation", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approval unavailable" })).toBeDisabled();
+  expect(browserErrors).toEqual([]);
+});
+
+test("mobile coordinator workspace has no horizontal overflow", async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name !== "mobile", "Mobile-only viewport validation.");
+  const browserErrors = captureBrowserErrors(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+
+  await signUp(page, "mobile");
+  await createRequirement(page, { item: "Emergency blankets", quantity: 50, budgetDollars: 800 });
+  await expect(page.getByText("Demo General Relief Wholesale", { exact: true })).toBeVisible({ timeout: 30_000 });
+
+  const dimensions = await page.evaluate(() => ({
+    viewport: document.documentElement.clientWidth,
+    document: document.documentElement.scrollWidth,
+    body: document.body.scrollWidth,
+  }));
+  expect(dimensions.document).toBeLessThanOrEqual(dimensions.viewport);
+  expect(dimensions.body).toBeLessThanOrEqual(dimensions.viewport);
+  expect(browserErrors).toEqual([]);
 });
