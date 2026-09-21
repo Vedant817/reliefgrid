@@ -57,16 +57,16 @@ Prerequisites: Node.js 20 or newer, npm, and a Convex account.
 3. For every line item, enter the real item name, quantity, and budget. Add more rows when one purchase contains several items.
 4. Enter the required arrival time and delivery location. If certification matters, enter both the exact certification name and an exact model, product, or lot identifier used to match external evidence.
 5. Click **Create requirement**. The requirement and its line items appear in the left column.
-6. In **Shortlist suppliers**, choose from **Saved vendors**, use **Find matching suppliers** to search the public web, or add a supplier manually. Firecrawl is tried first; Exa is used automatically when Firecrawl is unavailable or out of credits. Review every discovered contact before outreach.
-7. For a no-email demo, shortlist one of the clearly labeled demo suppliers, continue to **Quotes**, and paste a sample response. Demo suppliers use reserved placeholder addresses, so the application disables RFQ and award email to them.
+6. In **Shortlist**, begin with the **Saved vendor directory** or add a known supplier manually. If no saved vendor fits, expand **Search public sources (optional)**. Discovered contacts must show a source domain and public role mailbox; click **Confirm contact & shortlist** before outreach.
+7. For a no-email demo, shortlist one of the clearly labeled demo suppliers, continue to **Quotes**, and click **Use sample quote**. The generated quote uses the requirement's actual quantity, deadline, budget, and certification policy, then runs through the live extraction path. Demo suppliers cannot receive RFQ or award email.
 8. For real outreach, add or discover a supplier with a deliverable email, then click **Approve & send request**. This explicit approval creates or maps the request inbox and sends the request through AgentMail. For several line items, **Approve & send all** sends the selected real suppliers across all requests.
-9. Wait for the supplier to reply, or paste a quote you already received. Inbound AgentMail replies and pasted quotes use the same OpenAI (Groq fallback) extraction path. The quote list updates in real time.
+9. Wait for the supplier to reply, or paste a quote you already received. Inbound replies, pasted quotes, and sample quotes use the same live extraction path. Date-only delivery promises are treated as end-of-day in the requirement timezone; a missing delivery date is shown as **Arrival not confirmed**.
 10. If an offer is ambiguous, click **Draft targeted clarification**, review the question, then click **Approve & send**. Nothing is sent merely because a draft was generated.
 11. If certification is required, paste an authoritative HTTPS evidence page into **Independent certification check** and click **Verify**. The page must contain the exact certification and product/model identifier. Supporting or non-matching pages remain under review.
 12. Optionally attach a supplier certificate or other evidence with **+ Cert evidence**. An attachment is supporting documentation; it does not by itself mark an offer verified.
 13. Click **Compute recommendation**. Deterministic code applies quantity, price, deadline, budget, confidence, and evidence rules. Review the selected lines and rejection reasons.
-14. Expand **How was this decision made?** to compare constraint changes without changing saved data.
-15. When the recommendation is complete and correct, click **Approve plan**. Approval revalidates current inputs and queues award/decline notices in the original supplier threads.
+14. Expand **Advanced** to inspect counterfactuals, recall checks, replay, and the technical decision trace without changing saved data.
+15. When the recommendation has current, full coverage, click **Approve plan**. Approval stays disabled for zero-unit, incomplete, stale, or ambiguous results and revalidates current inputs before supplier notices are queued.
 16. Use **View full report** in the decision summary to open the printable decision record, then choose **Print / PDF**.
 17. Expand **Public recall check** when the product identifier should be checked against authoritative recall sources. A confirmed match invalidates affected offers, recomputes the plan, and creates a hold-notice draft. Review and explicitly approve that notice before sending it.
 

@@ -1,6 +1,6 @@
 # ReliefGrid
 
-ReliefGrid turns real supplier quote emails into a human-approved sourcing decision. It stores requests and supplier threads in Convex, ingests signed AgentMail replies, extracts offer fields with OpenAI (Groq fallback), checks external evidence through Firecrawl (Exa fallback), and applies deterministic allocation rules.
+ReliefGrid is an urgent-procurement decision workspace that converts messy supplier emails into a defensible, approval-ready purchase plan. The core chain is requirement → supplier shortlist → quotes → evidence → deterministic recommendation → human approval → audit record.
 
 Requirements, offers, evidence, and plans start empty, and provider failures remain visible. Each account receives four clearly labeled demo suppliers so a presenter can immediately exercise shortlisting, pasted-quote extraction, and allocation. Their reserved placeholder addresses can never receive RFQs or award notices; real outreach still requires a real supplier contact and an explicit user action.
 
@@ -38,6 +38,7 @@ npm run test:e2e
 - Offer extraction prefers OpenAI and automatically retries through Groq when OpenAI fails or has no key.
 - Web research prefers Firecrawl and automatically retries through Exa when Firecrawl fails or has no credits.
 - Supplier claims and uploaded files do not become authoritative verification automatically.
-- Allocation is deterministic; a person must approve the plan.
+- Allocation is deterministic; incomplete, stale, ambiguous, and zero-unit results cannot be approved.
+- Date-only delivery promises are interpreted as end-of-day in the requirement timezone; missing dates remain explicitly unconfirmed.
 
 Authentication is Convex Auth with email and password. Organization roles, retention policy, backups, monitoring, and customer-specific approval rules remain production rollout requirements.
