@@ -1,6 +1,7 @@
 import { useAction, useQuery } from "convex/react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { userFacingError } from "../lib/errors";
 
 type PublicRecallCheckProps = {
   needId?: any;
@@ -30,7 +31,7 @@ export function PublicRecallCheck({ needId, coverage, target }: PublicRecallChec
       const res = await checkRecalls({ needId });
       setResult({ recalled: res.recalled, checked: res.checked, note: res.note ?? undefined, sourceUrl: res.sourceUrl ?? undefined, invalidated: res.invalidated ?? undefined });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not check public recalls");
+      setError(userFacingError(cause, "Could not check public recalls"));
     } finally {
       setPending(false);
     }
@@ -40,7 +41,7 @@ export function PublicRecallCheck({ needId, coverage, target }: PublicRecallChec
     <section>
       <div className="eyebrow">Public recall watch</div>
       <p className="mt-1 text-xs leading-relaxed text-soft">
-        Firecrawl checks public recall sources first, with Exa fallback. A confirmed match freezes the affected offers and drafts a hold notice.
+        Live public-source research checks recall records. A confirmed match freezes the affected offers and drafts a hold notice.
       </p>
       <button
         disabled={!needId || pending}
@@ -74,7 +75,7 @@ export function PublicRecallCheck({ needId, coverage, target }: PublicRecallChec
                 setPending(true);
                 setError(null);
                 void approveNotice({ noticeId: notice._id })
-                  .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not send hold notice"))
+                  .catch((cause) => setError(userFacingError(cause, "Could not send hold notice")))
                   .finally(() => setPending(false));
               }}
               className="mt-2 rounded-lg bg-ink px-3 py-1.5 text-xs font-medium text-paper hover:opacity-90 disabled:opacity-40"

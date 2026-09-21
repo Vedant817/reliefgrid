@@ -29,7 +29,7 @@ describe("sendOutreachForNeed", () => {
 
   test("an inbox failure stops before threads and reports it", async () => {
     const d = deps({ ensureInbox: vi.fn(async () => { throw new Error("no key"); }) });
-    expect(await sendOutreachForNeed(d, "need-1", ["s1"])).toEqual({ sent: 0, deduped: 0, errors: ["no key"] });
+    expect(await sendOutreachForNeed(d, "need-1", ["s1"])).toEqual({ sent: 0, deduped: 0, errors: ["Could not prepare the inbox"] });
     expect(d.createThreads).not.toHaveBeenCalled();
   });
 
@@ -41,7 +41,7 @@ describe("sendOutreachForNeed", () => {
         return { deduped: false };
       }),
     });
-    expect(await sendOutreachForNeed(d, "need-1", ["s1", "s2"])).toEqual({ sent: 1, deduped: 0, errors: ["provider 429"] });
+    expect(await sendOutreachForNeed(d, "need-1", ["s1", "s2"])).toEqual({ sent: 1, deduped: 0, errors: ["Could not send RFQ"] });
   });
 
   test("already-sent threads count as deduped and empty rows report it", async () => {
@@ -64,7 +64,7 @@ describe("workspace derivations", () => {
   test("next step walks the pipeline in order", () => {
     const base = { hasNeed: true, supplierCount: 1, threadCount: 1, sentThreadCount: 1, offerCount: 1, verifiedCount: 1, requiresEvidence: true, hasPlan: true, planApproved: false };
     expect(nextStepForWorkspace({ ...base, hasNeed: false })).toMatch(/requirement/);
-    expect(nextStepForWorkspace({ ...base, supplierCount: 0, threadCount: 0, sentThreadCount: 0, offerCount: 0 })).toMatch(/Find matching suppliers/);
+    expect(nextStepForWorkspace({ ...base, supplierCount: 0, threadCount: 0, sentThreadCount: 0, offerCount: 0 })).toMatch(/saved vendor/);
     expect(nextStepForWorkspace({ ...base, sentThreadCount: 0, offerCount: 0 })).toMatch(/approve supplier outreach/);
     expect(nextStepForWorkspace({ ...base, offerCount: 0 })).toMatch(/paste a quote/);
     expect(nextStepForWorkspace({ ...base, verifiedCount: 0 })).toMatch(/evidence/);

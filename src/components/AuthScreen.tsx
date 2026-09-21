@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { useAuthActions } from "@convex-dev/auth/react";
+import { userFacingError } from "../lib/errors";
 
 function messageOf(cause: unknown) {
   const raw = cause instanceof Error ? cause.message : String(cause);
   if (/InvalidAccountId|InvalidSecret/i.test(raw)) return "Email or password is incorrect";
   if (/already exists|already used/i.test(raw)) return "An account with this email already exists";
-  const cleaned = raw.replace(/^\[CONVEX[^\]]*\]\s*/i, "").replace(/Server Error Uncaught Error:\s*/i, "").trim();
-  return cleaned || "Could not sign in";
+  return userFacingError(cause, "Could not sign in");
 }
 
 export function AuthScreen() {

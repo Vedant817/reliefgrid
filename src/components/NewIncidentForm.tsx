@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { userFacingError } from "../lib/errors";
 
 export type LineItem = {
   item: string;
@@ -49,7 +50,7 @@ export function NewIncidentForm({ onCancel, onCreate }: { onCancel: () => void; 
               timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
             });
           } catch (cause) {
-            setError(cause instanceof Error ? cause.message : "Could not create requirement");
+            setError(userFacingError(cause, "Could not create requirement"));
           } finally {
             setBusy(false);
           }

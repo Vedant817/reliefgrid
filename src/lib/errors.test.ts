@@ -11,5 +11,7 @@ describe("userFacingError", () => {
 
   test("uses a short fallback for unknown failures", () => {
     expect(userFacingError(null, "Could not add supplier")).toBe("Could not add supplier");
+    expect(userFacingError(new Error("internal callback pool token mismatch"), "Could not send request"))
+      .toBe("Could not send request");
   });
 });

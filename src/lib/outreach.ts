@@ -1,3 +1,5 @@
+import { userFacingError } from "./errors";
+
 // Outreach coordinator: send sequencing, reply states, and workspace
 // derivations shared by App and SupplierOutreach. Offer order
 // and eligibility flags live server-side in the workspace read model;
@@ -12,7 +14,7 @@ export type OutreachDeps = {
 export type OutreachResult = { sent: number; deduped: number; errors: string[] };
 
 function messageOf(cause: unknown, fallback: string) {
-  return cause instanceof Error ? cause.message : fallback;
+  return userFacingError(cause, fallback);
 }
 
 // One need, any number of suppliers: inbox first, then threads, then one
@@ -78,17 +80,21 @@ export type WorkspaceFlowArgs = {
   requiresEvidence: boolean;
   hasPlan: boolean;
   planApproved: boolean;
+  planReady?: boolean;
+  planInfeasible?: boolean;
 };
 
 export function nextStepForWorkspace(args: WorkspaceFlowArgs) {
   if (!args.hasNeed) return "Create your first requirement to begin.";
   if (args.threadCount === 0 && args.offerCount === 0) {
-    return "Find matching suppliers and build a shortlist for this requirement.";
+    return "Start with a saved vendor and build the shortlist for this requirement.";
   }
   if (args.sentThreadCount === 0 && args.offerCount === 0) return "Review the shortlist, then approve supplier outreach.";
   if (args.offerCount === 0) return "Waiting for replies — or paste a quote you already received.";
   if (args.requiresEvidence && args.verifiedCount < args.offerCount) return "Verify the remaining certification evidence.";
   if (!args.hasPlan) return "Compute the recommendation from the quotes on hand.";
+  if (args.planInfeasible) return "Resolve the quote issues, then recompute the recommendation.";
+  if (!args.planApproved && args.planReady === false) return "Recompute the recommendation before approval.";
   if (!args.planApproved) return "Review the recommendation and approve the plan.";
   return "Done — every supplier has been answered.";
 }
