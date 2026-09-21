@@ -3,6 +3,7 @@ import { useAction, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { awaitingReplyThreads, sendOutreachForNeed } from "../lib/outreach";
 import { userFacingError } from "../lib/errors";
+import { supplierDisplayName, supplierDisplayRegion } from "../lib/format";
 
 type DiscoveredSupplier = {
   name: string;
@@ -147,10 +148,10 @@ export function SupplierOutreach({ needId, suppliers, threads }: { needId?: any;
             <div key={supplier._id} className="flex items-center justify-between gap-3 rounded-lg border border-hairline bg-sheet p-2.5">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <div className="truncate text-xs font-semibold">{supplier.name}</div>
-                  {supplier.isDemo ? <span className="rounded bg-[#fbf7ea] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#7a5c14]">Demo</span> : null}
+                  <div className="truncate text-xs font-semibold">{supplierDisplayName(supplier)}</div>
+                  {supplier.isDemo ? <span className="rounded bg-[#fbf7ea] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#7a5c14]">Sample data</span> : null}
                 </div>
-                <div className="truncate text-[11px] text-soft">{supplier.isDemo ? supplier.region : supplier.contactEmail}</div>
+                <div className="truncate text-[11px] text-soft">{supplier.isDemo ? supplierDisplayRegion(supplier) : supplier.contactEmail}</div>
               </div>
               <button
                 onClick={() => void addToShortlist(supplier._id)
@@ -251,14 +252,14 @@ export function SupplierOutreach({ needId, suppliers, threads }: { needId?: any;
             <div key={supplier._id} className="rounded-lg border border-hairline bg-sheet p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2"><div className="truncate text-sm font-medium">{supplier.name}</div>{supplier.isDemo ? <span className="rounded bg-[#fbf7ea] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#7a5c14]">Demo</span> : null}</div>
-                  <div className="mt-0.5 truncate text-[11px] tabular-nums text-soft">{supplier.region} · {supplier.isDemo ? "sample quotes only" : supplier.contactEmail}</div>
+                  <div className="flex items-center gap-2"><div className="truncate text-sm font-medium">{supplierDisplayName(supplier)}</div>{supplier.isDemo ? <span className="rounded bg-[#fbf7ea] px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-[#7a5c14]">Sample data</span> : null}</div>
+                  <div className="mt-0.5 truncate text-[11px] tabular-nums text-soft">{supplierDisplayRegion(supplier)} · {supplier.isDemo ? "external email disabled" : supplier.contactEmail}</div>
                   {supplier.sourceUrl ? <a href={supplier.sourceUrl} target="_blank" rel="noreferrer" className="mt-1 block truncate text-[10px] text-ledger underline underline-offset-2">Confirmed {supplier.contactType?.toLowerCase()} from {supplier.sourceDomain}</a> : null}
                 </div>
                 <span className="rounded-[4px] bg-paper px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-soft">{thread?.agentmailMessageId ? thread.status : "Ready"}</span>
               </div>
               <button disabled={!needId || supplier.isDemo || pending || Boolean(thread?.agentmailMessageId)} onClick={() => void handleSend(supplier._id)} className="mt-2 w-full rounded-lg border border-hairline bg-sheet px-2 py-1.5 text-xs font-medium text-ink hover:bg-paper disabled:cursor-not-allowed disabled:text-soft">
-                {supplier.isDemo ? "Demo supplier — use a sample quote" : pending ? "Sending…" : thread?.agentmailMessageId ? "Request sent" : "Send only this request"}
+                {supplier.isDemo ? "External email disabled for sample data" : pending ? "Sending…" : thread?.agentmailMessageId ? "Request sent" : "Send only this request"}
               </button>
               {canRemind ? <button disabled={Boolean(reminding)} onClick={() => void handleReminder(thread._id)} className="mt-1.5 w-full rounded-lg border border-hairline bg-sheet px-2 py-1.5 text-xs font-medium text-ink hover:bg-paper disabled:opacity-50">{reminding ? "Sending reminder…" : "Send reminder"}</button> : null}
             </div>
@@ -270,7 +271,7 @@ export function SupplierOutreach({ needId, suppliers, threads }: { needId?: any;
         <button disabled={sendingAll || Boolean(busyId)} onClick={() => void handleSendAll()} className="mt-3 w-full rounded-lg bg-ledger px-4 py-2.5 text-sm font-semibold text-white hover:bg-ledger-deep disabled:opacity-50">
           {sendingAll ? "Sending approved requests…" : `Approve & send shortlist (${pendingRealSuppliers.length})`}
         </button>
-      ) : shortlisted.some((supplier) => supplier.isDemo && !threads.find((thread) => thread.supplierId === supplier._id)?.agentmailMessageId) ? <div className="mt-3 rounded-lg border border-[#e7d9ae] bg-[#fbf7ea] p-3 text-xs text-[#7a5c14]">Demo suppliers never receive external email. Continue to Quotes and choose “Use sample quote.”</div> : null}
+      ) : shortlisted.some((supplier) => supplier.isDemo && !threads.find((thread) => thread.supplierId === supplier._id)?.agentmailMessageId) ? <div className="mt-3 rounded-lg border border-[#e7d9ae] bg-[#fbf7ea] p-3 text-xs text-[#7a5c14]">Preloaded supplier records never receive external email. Continue to Quotes and paste a supplier response.</div> : null}
 
       {outreachMessage ? <div role="status" className="mt-3 rounded-lg border border-hairline bg-paper p-3 text-xs text-soft">{outreachMessage}</div> : null}
     </section>

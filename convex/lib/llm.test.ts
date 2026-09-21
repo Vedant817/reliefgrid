@@ -44,6 +44,29 @@ describe("resolveLlmProvider", () => {
     expect(result.failures).toEqual([{ provider: "openai", error: "unparseable model output" }]);
   });
 
+  it("retries malformed Groq output once without weakening validation", async () => {
+    let attempts = 0;
+    const result = await withExtractionFallback({
+      providers: listLlmProviders({ GROQ_API_KEY: "gsk-test" }),
+      run: async () => {
+        attempts += 1;
+        return { requestId: "first", latencyMs: 1, content: "not json" };
+      },
+      retry: async () => {
+        attempts += 1;
+        return {
+          requestId: "retry",
+          latencyMs: 1,
+          content: '{"qty":100,"unitPriceCents":1275,"arrivalAtIso":"2026-09-25","certStatus":"unverified","language":"en","conditions":[],"confidence":0.99,"fieldConfidences":{"qty":0.99,"price":0.99,"arrival":0.99,"cert":0.99}}',
+        };
+      },
+    });
+    expect(attempts).toBe(2);
+    expect(result.provider.kind).toBe("groq");
+    expect(result.value.requestId).toBe("retry");
+    expect(result.value.offer.qty).toBe(100);
+  });
+
   it("reports an unconfigured provider with no keys", () => {
     expect(resolveLlmProvider({}).kind).toBe("unconfigured");
   });

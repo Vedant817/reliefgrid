@@ -13,13 +13,15 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:e2e:functional": "playwright test --config=playwright.functional.config.ts",
-    "test:e2e:providers": "playwright test --config=playwright.providers.config.ts"
+    "test:e2e:providers": "playwright test --config=playwright.providers.config.ts",
+    "deploy": "npx @convex-dev/static-hosting deploy"
   },
   "dependencies": {
     "@agentmail/convex": "^0.1.0",
     "@convex-dev/aggregate": "^0.3.1",
     "@convex-dev/auth": "^0.0.95",
     "@convex-dev/rate-limiter": "^0.3.2",
+    "@convex-dev/static-hosting": "^0.2.1",
     "@firecrawl/firecrawl-convex": "^0.1.1",
     "convex": "^1.27.0",
     "react": "^18.3.1",

@@ -168,14 +168,22 @@ export function parseExtractionJson(text: string): ExtractedOffer | null {
 export async function withExtractionFallback(args: {
   providers: LlmConfig[];
   run: (config: LlmConfig) => Promise<{ requestId: string; content: string; latencyMs: number }>;
+  retry?: (config: LlmConfig) => Promise<{ requestId: string; content: string; latencyMs: number } | null>;
 }) {
   return await withLlmFallback({
     providers: args.providers,
     run: async (config) => {
       const response = await args.run(config);
       const offer = parseExtractionJson(response.content);
-      if (!offer) throw new Error("unparseable model output");
-      return { ...response, offer };
+      if (offer) return { ...response, offer };
+
+      const retryResponse = await args.retry?.(config);
+      if (retryResponse) {
+        const retryOffer = parseExtractionJson(retryResponse.content);
+        if (retryOffer) return { ...retryResponse, offer: retryOffer };
+      }
+
+      throw new Error("unparseable model output");
     },
   });
 }
@@ -188,6 +196,12 @@ export async function chatExtractedOfferWithFallback(
   const result = await withExtractionFallback({
     providers: listLlmProviders(env),
     run: (config) => chatJson(config, prompt, timeoutMs, true),
+    retry: (config) => config.kind === "groq"
+      ? chatJson(config, {
+          system: `${prompt.system} Your previous response failed strict validation. Return one JSON object containing every required field with exactly the documented types.`,
+          user: prompt.user,
+        }, timeoutMs, true)
+      : Promise.resolve(null),
   });
   return {
     ...result.value,

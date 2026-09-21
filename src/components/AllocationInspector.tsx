@@ -1,4 +1,4 @@
-import { formatCents, friendlyReason } from "../lib/format";
+import { formatCents, friendlyReason, supplierDisplayName } from "../lib/format";
 
 function requirementDeadline(need: any) {
   return new Date(need.deadlineAt).toLocaleString("en-US", {
@@ -92,7 +92,7 @@ export function AllocationInspector({ plan, need, state = "none", blockedReason,
             <tbody className="divide-y divide-hairline">
               {plan.lines?.map((line: any) => (
                 <tr key={line._id} className="bg-sheet">
-                  <td className="px-3 py-2 font-medium">{line.supplier?.name ?? line.supplierId.slice(0, 8)}</td>
+                  <td className="px-3 py-2 font-medium">{line.supplier ? supplierDisplayName(line.supplier) : line.supplierId.slice(0, 8)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{line.qty}</td>
                   <td className="px-3 py-2 text-right tabular-nums">{formatCents(line.costCents)}</td>
                   <td className="px-3 py-2 text-xs text-soft">{friendlyReason(line.reason)}</td>

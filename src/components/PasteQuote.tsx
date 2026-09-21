@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { userFacingError } from "../lib/errors";
+import { supplierDisplayName } from "../lib/format";
 
 type Supplier = {
   _id: string;
@@ -111,7 +112,7 @@ export function PasteQuote({
           <option value="">{suppliers.length ? "Select supplier" : "Add a supplier first"}</option>
           {suppliers.map((supplier) => (
             <option key={supplier._id} value={supplier._id}>
-              {supplier.name}{supplier.isDemo ? " — Demo supplier" : ` — ${supplier.contactEmail}`}
+              {supplierDisplayName(supplier)}{supplier.isDemo ? " — Sample data" : ` — ${supplier.contactEmail}`}
             </option>
           ))}
         </select>

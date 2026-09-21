@@ -2,6 +2,8 @@ import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { auth } from "./auth.js";
 import { getAgentMail } from "./agentmailClient.js";
+import { registerStaticRoutes } from "@convex-dev/static-hosting";
+import { components } from "./_generated/api";
 
 const http = httpRouter();
 
@@ -27,5 +29,8 @@ http.route({
     return new Response(JSON.stringify({ ok: true, service: "reliefgrid" }), { status: 200, headers: { "Content-Type": "application/json" } });
   }),
 });
+
+// Keep auth, health, and webhooks stable while static files own every other GET.
+registerStaticRoutes(http, components.staticHosting);
 
 export default http;

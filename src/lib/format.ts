@@ -20,6 +20,16 @@ export function certificationLabel(certRequired?: string | null) {
   return certRequired?.trim() || "No certification required";
 }
 
+export function supplierDisplayName(supplier?: { name?: string; isDemo?: boolean } | null) {
+  const name = supplier?.name?.trim() || "Unknown supplier";
+  return supplier?.isDemo ? name.replace(/^Demo\s+/i, "") : name;
+}
+
+export function supplierDisplayRegion(supplier?: { region?: string; isDemo?: boolean } | null) {
+  const region = supplier?.region?.trim() || "Region not provided";
+  return supplier?.isDemo ? region.replace(/\bdemo\s*/gi, "") : region;
+}
+
 export function formatDeadline(ts: number) {
   const diff = ts - Date.now();
   const hours = Math.floor(diff / (1000 * 60 * 60));

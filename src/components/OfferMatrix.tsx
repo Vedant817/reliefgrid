@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { certificationLabel, formatCents, formatDate, humanizeStatus } from "../lib/format";
+import { certificationLabel, formatCents, formatDate, humanizeStatus, supplierDisplayName } from "../lib/format";
 import { userFacingError } from "../lib/errors";
 import { PasteQuote } from "./PasteQuote";
 
@@ -128,7 +128,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2 text-sm font-semibold">
-                    {o.supplier?.name ?? "Unknown supplier"}
+                    {supplierDisplayName(o.supplier)}
                     {o.language === "es" && <span className="rounded bg-ledger px-1.5 py-0.5 text-[11px] font-medium text-white">ES/EN</span>}
                   </div>
                   {!o.supplier?.isDemo && o.supplier?.contactEmail ? <div className="mt-0.5 text-xs tabular-nums text-soft">{o.supplier.contactEmail}</div> : null}

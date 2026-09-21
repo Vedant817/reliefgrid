@@ -8,7 +8,7 @@ test("fresh coordinator completes the approval-ready golden path", async ({ page
   await signUp(page, "golden");
   await createRequirement(page);
 
-  await expect(page.getByText("Demo General Relief Wholesale", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("General Relief Wholesale", { exact: true })).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Shortlist", exact: true }).first().click();
   await expect(page.getByText("1 selected")).toBeVisible();
   await page.getByRole("button", { name: "Continue to quotes" }).click();
@@ -70,7 +70,7 @@ test("mobile coordinator workspace has no horizontal overflow", async ({ page },
 
   await signUp(page, "mobile");
   await createRequirement(page, { item: "Emergency blankets", quantity: 50, budgetDollars: 800 });
-  await expect(page.getByText("Demo General Relief Wholesale", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("General Relief Wholesale", { exact: true })).toBeVisible({ timeout: 30_000 });
 
   const dimensions = await page.evaluate(() => ({
     viewport: document.documentElement.clientWidth,
