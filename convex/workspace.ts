@@ -2,6 +2,8 @@ import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { requireNeedOwner } from "./model/auth";
 import { offersByNeed } from "./offerTotals";
+import { allocateOffers } from "./lib/allocate";
+import { allocationInputHash } from "./lib/allocationHash";
 
 // The one joined read behind a need workspace: the need, its offers fully
 // enriched (supplier, source checks, attachments, eligibility flags) in the
@@ -47,9 +49,9 @@ export const getNeedWorkspace = query({
               })),
             ),
             verified: checks.some((c) => c.status === "verified"),
-            isLate: o.arrivalAt > need.deadlineAt,
+            isLate: o.arrivalAt !== undefined && o.arrivalAt > need.deadlineAt,
             isVerified: o.certStatus === "verified",
-            ambiguous: o.certStatus === "needs_review" || o.confidence < 0.75,
+            ambiguous: o.arrivalAt === undefined || o.certStatus === "needs_review" || o.confidence < 0.75,
           };
         }),
       )
@@ -77,6 +79,48 @@ export const getNeedWorkspace = query({
       latestPlan = { ...plan, lines: linesWithSupplier, approval: approval ?? null };
     }
 
+    const allocationInputs = rawOffers.map((offer) => ({
+      offerId: offer._id,
+      supplierId: offer.supplierId,
+      supplierName: suppliersById.get(String(offer.supplierId))?.name ?? "Unknown supplier",
+      qty: offer.qty,
+      unitPriceCents: offer.unitPriceCents,
+      arrivalAt: offer.arrivalAt,
+      certStatus: offer.certStatus,
+      confidence: offer.confidence,
+      fieldEvidence: offer.fieldEvidence,
+    }));
+    const currentAllocation = allocateOffers(allocationInputs, need);
+    const currentHash = allocationInputHash(need, allocationInputs);
+    let approvalReadiness = { ready: false, reason: "Compute a current recommendation before approval" };
+    let recommendationState: "none" | "infeasible" | "stale" | "ready" | "approved" = "none";
+    if (plan?.status === "approved") {
+      recommendationState = "approved";
+      approvalReadiness = { ready: false, reason: "This plan is already approved" };
+    } else if (plan?.status === "infeasible" || (plan && !currentAllocation.feasible)) {
+      recommendationState = "infeasible";
+      approvalReadiness = {
+        ready: false,
+        reason: currentAllocation.rejected[0]?.reason ?? "No eligible quotes cover the full requirement",
+      };
+    } else if (plan) {
+      const expectedLines = currentAllocation.selected
+        .map((offer) => `${offer.offerId}:${offer.qty}:${offer.qty * offer.unitPriceCents}`)
+        .sort();
+      const actualLines = (latestPlan?.lines ?? [])
+        .map((line: any) => `${line.offerId}:${line.qty}:${line.costCents}`)
+        .sort();
+      const stale = plan.status !== "proposed"
+        || plan.inputHash !== currentHash
+        || plan.totalQty !== currentAllocation.totalQty
+        || plan.totalCostCents !== currentAllocation.totalCostCents
+        || JSON.stringify(expectedLines) !== JSON.stringify(actualLines);
+      recommendationState = stale ? "stale" : "ready";
+      approvalReadiness = stale
+        ? { ready: false, reason: "Recommendation is out of date; recompute it before approval" }
+        : { ready: true, reason: "Full coverage is current and ready for human approval" };
+    }
+
     const [offerCount, totalQty] = await Promise.all([
       offersByNeed.count(ctx, { namespace: args.needId }),
       offersByNeed.sum(ctx, { namespace: args.needId }),
@@ -90,6 +134,8 @@ export const getNeedWorkspace = query({
       offers,
       threads,
       latestPlan,
+      recommendationState,
+      approvalReadiness,
       coverage: { offerCount, totalQty },
       verifiedOfferCount: offers.filter((o) => o.verified).length,
       inbox: inbox ? { email: inbox.email, inboxId: inbox.inboxId } : null,

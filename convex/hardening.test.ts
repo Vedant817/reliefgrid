@@ -4,6 +4,7 @@ import { api, internal } from "./_generated/api";
 import { buildDriftSnapshot } from "./lib/drift";
 import schema from "./schema";
 import aggregate from "@convex-dev/aggregate/test";
+import type { MutationCtx } from "./_generated/server";
 
 const modules = import.meta.glob("./**/*.*s");
 const future = () => Date.now() + 6 * 3600 * 1000;
@@ -96,6 +97,7 @@ describe("requirement creation", () => {
     expect(incidents).toHaveLength(1);
     expect(result.needIds).toHaveLength(2);
     expect(needs.map((need) => need.item).sort()).toEqual(["Blankets", "Water"]);
+    expect(needs.every((need) => need.partialAllowed === false)).toBe(true);
   });
 
   test("rejects the whole requirement when any line item is invalid", async () => {
@@ -111,6 +113,17 @@ describe("requirement creation", () => {
       ],
     })).rejects.toThrow(/quantity/);
     expect(await t.query(api.incidents.listIncidents, {})).toHaveLength(0);
+  });
+
+  test("rejects an invalid delivery timezone", async () => {
+    const t = asUser(makeT(), "invalid-timezone-user");
+    await expect(t.mutation(api.incidents.createRequirement, {
+      title: "Invalid timezone",
+      deadlineAt: future(),
+      deliveryLocation: "Central shelter",
+      timezone: "Mars/Olympus",
+      items: [{ item: "Water", qty: 100, budgetCents: 50000 }],
+    })).rejects.toThrow(/timezone/);
   });
 });
 
@@ -132,6 +145,30 @@ describe("offer guards", () => {
     ).rejects.toThrow(/divergent/);
     const id2: string = await t.mutation(internal.offers.upsertOfferVersion, base);
     expect(id2).toBe(id1);
+  });
+
+  test("stores an unknown arrival without using the Unix epoch and marks the recommendation infeasible", async () => {
+    const t = asUser(makeT());
+    const { needId } = await seedNeed(t);
+    const suppliers: any[] = await seedSuppliers(t);
+    await t.mutation(internal.offers.upsertOfferVersion, {
+      needId,
+      supplierId: suppliers[0]._id,
+      qty: 100,
+      unitPriceCents: 1000,
+      certStatus: "verified",
+      conditions: [],
+      confidence: 0.98,
+      rawEmailId: "unknown-arrival",
+      rawBody: "100 units, delivery date to be confirmed",
+      language: "en",
+    });
+    const result: any = await t.mutation(api.allocations.computeAllocation, { needId });
+    const workspace: any = await t.query(api.workspace.getNeedWorkspace, { needId });
+    expect(result.totalQty).toBe(0);
+    expect(workspace.offers[0].arrivalAt).toBeUndefined();
+    expect(workspace.latestPlan.status).toBe("infeasible");
+    expect(workspace.approvalReadiness).toEqual({ ready: false, reason: "Delivery date needs confirmation" });
   });
 });
 
@@ -282,7 +319,13 @@ describe("authorization and decision integrity", () => {
     const plan: any = await t.mutation(api.allocations.computeAllocation, { needId });
     expect(plan.feasible).toBe(false);
     expect(plan.shortfallQty).toBe(60);
-    await expect(t.mutation(internal.allocations.approvePlan, { planId: plan.planId })).rejects.toThrow(/incomplete plan/);
+    let stored: any = await t.query(api.allocations.getLatestPlan, { needId });
+    expect(stored.status).toBe("infeasible");
+    await t.run(async (ctx: MutationCtx) => await ctx.db.patch(plan.planId, { status: "proposed" }));
+    await t.mutation(api.allocations.computeAllocation, { needId });
+    stored = await t.query(api.allocations.getLatestPlan, { needId });
+    expect(stored.status).toBe("infeasible");
+    await expect(t.mutation(internal.allocations.approvePlan, { planId: plan.planId })).rejects.toThrow(/Only proposed plans/);
   });
 
   test("a supplier certification claim stays out of allocation until source verification promotes it", async () => {

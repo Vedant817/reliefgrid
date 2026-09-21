@@ -75,9 +75,13 @@ export async function recomputeAllocation(
   // Idempotent recompute: identical inputs reuse the current live plan.
   const inputHash = allocationInputHash(need, enriched);
   const identical = existingPlans.find(
-    (p) => (p.status === "proposed" || p.status === "approved") && p.inputHash === inputHash,
+    (p) => (p.status === "proposed" || p.status === "approved" || p.status === "infeasible") && p.inputHash === inputHash,
   );
   if (identical) {
+    const expectedStatus = result.feasible ? "proposed" : "infeasible";
+    if (identical.status !== "approved" && identical.status !== expectedStatus) {
+      await ctx.db.patch(identical._id, { status: expectedStatus });
+    }
     return { planId: identical._id, ...result, deduped: true };
   }
   if (existingPlans.length >= 100) throw new Error("This need has reached the 100-plan history limit");
@@ -85,14 +89,14 @@ export async function recomputeAllocation(
   // Supersede previous proposed plans; drift paths additionally dethrone an
   // approved plan the new evidence invalidates.
   for (const p of existingPlans) {
-    if (p.status === "proposed" || (opts.supersedeApproved && p.status === "approved")) {
+    if (p.status === "proposed" || p.status === "infeasible" || (opts.supersedeApproved && p.status === "approved")) {
       await ctx.db.patch(p._id, { status: "superseded" });
     }
   }
 
   const planId = await ctx.db.insert("allocationPlans", {
     needId,
-    status: "proposed",
+    status: result.feasible ? "proposed" : "infeasible",
     totalCostCents: result.totalCostCents,
     totalQty: result.totalQty,
     createdAt: Date.now(),
