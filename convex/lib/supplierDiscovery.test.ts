@@ -7,8 +7,9 @@ describe("supplier discovery normalization", () => {
       .toBe("sales@vendor.com");
   });
 
-  test("rejects reserved and no-reply mailboxes", () => {
+  test("rejects reserved, no-reply, and personal mailboxes", () => {
     expect(extractPublicContactEmail("noreply@vendor.com support@example.org")).toBeUndefined();
+    expect(extractPublicContactEmail("CEO jane@vendor.com")).toBeUndefined();
   });
 
   test("uses a source hostname as a transparent service-area label", () => {

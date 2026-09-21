@@ -23,6 +23,8 @@ export const discoverSuppliers = action({
       snippet: v.string(),
       contactEmail: v.optional(v.string()),
       region: v.string(),
+      sourceDomain: v.string(),
+      contactType: v.union(v.literal("role_mailbox"), v.literal("none")),
     })),
     providerStatus: v.literal("live"),
     provider: v.union(v.literal("firecrawl"), v.literal("exa")),
@@ -43,6 +45,7 @@ export const discoverSuppliers = action({
         ...providers,
         firecrawl: () => searchViaComponent(ctx, searchQuery, 5),
         exa: () => searchViaExa(searchQuery, 5, { apiKey: providers.exaApiKey ?? undefined }),
+        accept: (value) => value.hits.length > 0,
       });
     } catch (error) {
       if (error instanceof WebResearchError) {
@@ -70,6 +73,8 @@ export const discoverSuppliers = action({
         snippet: hit.snippet,
         contactEmail: hit.contactEmail,
         region: supplierRegionLabel(hit.url),
+        sourceDomain: new URL(hit.url).hostname.toLowerCase(),
+        contactType: hit.contactEmail ? "role_mailbox" as const : "none" as const,
       }));
     await recordRun(ctx, {
       provider: retrieval.provider,

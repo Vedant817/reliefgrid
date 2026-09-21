@@ -12,11 +12,13 @@ const DEMO_SUPPLIERS = [
 ] as const;
 
 async function seedDemoSuppliersForOwner(ctx: MutationCtx, ownerId: string) {
-  const existing = await ctx.db.query("suppliers").withIndex("by_owner", (q) => q.eq("ownerId", ownerId)).take(100);
-  const existingKeys = new Set(existing.map((supplier) => supplier.demoKey).filter(Boolean));
   let inserted = 0;
   for (const supplier of DEMO_SUPPLIERS) {
-    if (existingKeys.has(supplier.demoKey)) continue;
+    const existing = await ctx.db
+      .query("suppliers")
+      .withIndex("by_owner_and_demo_key", (q) => q.eq("ownerId", ownerId).eq("demoKey", supplier.demoKey))
+      .first();
+    if (existing) continue;
     await ctx.db.insert("suppliers", {
       ...supplier,
       ownerId,
@@ -101,6 +103,8 @@ export const upsertSupplier = mutation({
     name: v.string(),
     contactEmail: v.string(),
     region: v.string(),
+    sourceUrl: v.optional(v.string()),
+    contactType: v.optional(v.string()),
   },
   returns: v.id("suppliers"),
   handler: async (ctx, args) => {
@@ -110,7 +114,31 @@ export const upsertSupplier = mutation({
     if (contactEmail.endsWith(".test") || contactEmail.endsWith(".example") || contactEmail.endsWith(".invalid")) {
       throw new Error("Enter a deliverable supplier email address");
     }
-    const supplier = { ...args, name: args.name.trim(), region: args.region.trim(), contactEmail, isDemo: false, demoKey: undefined };
+    let source: { sourceUrl: string; sourceDomain: string; contactType: string; contactConfirmedAt: number } | null = null;
+    if (args.sourceUrl) {
+      let parsed: URL;
+      try {
+        parsed = new URL(args.sourceUrl);
+      } catch {
+        throw new Error("Supplier source must be a valid URL");
+      }
+      if (parsed.protocol !== "https:") throw new Error("Supplier source must use HTTPS");
+      if (args.contactType !== "role_mailbox") throw new Error("Confirm a public role mailbox before shortlisting a discovered supplier");
+      source = {
+        sourceUrl: parsed.toString(),
+        sourceDomain: parsed.hostname.toLowerCase(),
+        contactType: "Role mailbox",
+        contactConfirmedAt: Date.now(),
+      };
+    }
+    const supplier = {
+      name: args.name.trim(),
+      region: args.region.trim(),
+      contactEmail,
+      isDemo: false,
+      demoKey: undefined,
+      ...(source ?? {}),
+    };
     if (!supplier.name) throw new Error("Supplier name is required");
     if (supplier.name.length > 120) throw new Error("Supplier name must be at most 120 characters");
     if (supplier.contactEmail.length > 320) throw new Error("Supplier email must be at most 320 characters");

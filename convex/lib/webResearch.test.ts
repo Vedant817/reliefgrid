@@ -32,6 +32,19 @@ describe("web research provider fallback", () => {
     });
   });
 
+  it("falls back to Exa when Firecrawl returns no usable results", async () => {
+    const result = await withWebResearchFallback({
+      firecrawlApiKey: "fc-key",
+      exaApiKey: "exa-key",
+      firecrawl: async () => [] as string[],
+      exa: async () => ["exa result"],
+      accept: (value) => value.length > 0,
+    });
+
+    expect(result.provider).toBe("exa");
+    expect(result.failures).toEqual([{ provider: "firecrawl", error: "Provider returned no usable results" }]);
+  });
+
   it("uses Exa directly when Firecrawl is not configured", async () => {
     const firecrawl = vi.fn(async () => "firecrawl result");
     const result = await withWebResearchFallback({
