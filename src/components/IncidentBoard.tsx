@@ -1,4 +1,4 @@
-import { formatDeadline, deadlineUrgency } from "../lib/format";
+import { certificationLabel, formatDeadline, deadlineUrgency } from "../lib/format";
 
 const urgencyTone: Record<string, string> = {
   critical: "border-seal bg-[#f9ece7] text-seal",
@@ -80,7 +80,7 @@ export function IncidentBoard({
         <p className="text-sm text-soft">
           {activeNeed.qty} units
           {activeNeed.budgetCents ? ` · $${(activeNeed.budgetCents / 100).toFixed(0)} budget` : ""}
-          {activeNeed.certRequired ? ` · ${activeNeed.certRequired}` : ""}
+          {` · ${certificationLabel(activeNeed.certRequired)}`}
           {activeNeed.deliveryLocation ? ` · ${activeNeed.deliveryLocation}` : ""}
         </p>
       ) : (

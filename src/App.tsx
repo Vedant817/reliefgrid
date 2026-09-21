@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAction, useQuery, useMutation } from "convex/react";
 import { useAuthActions, useConvexAuth } from "@convex-dev/auth/react";
 import { api } from "../convex/_generated/api";
@@ -19,6 +19,7 @@ import { AppHeader } from "./components/AppHeader";
 import { WorkspaceFlow } from "./components/WorkspaceFlow";
 import { formatDeadline } from "./lib/format";
 import { awardDispatchMessage } from "./lib/awards";
+import { userFacingError } from "./lib/errors";
 import {
   flowStepAvailable,
   flowStepForWorkspace,
@@ -29,13 +30,15 @@ import {
 export default function App() {
   const { isAuthenticated, isLoading: authLoading } = useConvexAuth();
   const { signOut } = useAuthActions();
-  const currentUser = useQuery(api.users.me, isAuthenticated ? {} : "skip");
-  const incidentQuery = useQuery(api.incidents.listIncidents, isAuthenticated ? {} : "skip");
+  const [signingOut, setSigningOut] = useState(false);
+  const signedIn = isAuthenticated && !signingOut;
+  const currentUser = useQuery(api.users.me, signedIn ? {} : "skip");
+  const incidentQuery = useQuery(api.incidents.listIncidents, signedIn ? {} : "skip");
   const allIncidents = incidentQuery ?? [];
   const [incidentSearch, setIncidentSearch] = useState("");
   const searchedIncidents: any = useQuery(
     api.search.searchIncidents,
-    incidentSearch.trim() ? { query: incidentSearch } : "skip",
+    signedIn && incidentSearch.trim() ? { query: incidentSearch } : "skip",
   ) ?? [];
   const incidents: any[] = incidentSearch.trim() ? searchedIncidents : allIncidents;
   const [selectedIncidentId, setSelectedIncidentId] = useState<string | null>(null);
@@ -51,7 +54,7 @@ export default function App() {
   const [selectedNeedId, setSelectedNeedId] = useState<string | null>(null);
   const activeNeed = (needs.find((n: any) => n._id === selectedNeedId) ?? needs[0] ?? null) as any;
 
-  const suppliers = useQuery(api.suppliers.listSuppliers, isAuthenticated ? {} : "skip") ?? [];
+  const suppliers = useQuery(api.suppliers.listSuppliers, signedIn ? {} : "skip") ?? [];
 
   const workspace: any = useQuery(
     api.workspace.getNeedWorkspace,
@@ -61,6 +64,8 @@ export default function App() {
   const threads = workspace?.threads ?? [];
   const latestPlan = workspace?.latestPlan ?? null;
   const verifiedOfferCount = workspace?.verifiedOfferCount ?? 0;
+  const recommendationState = workspace?.recommendationState ?? "none";
+  const approvalReadiness = workspace?.approvalReadiness ?? { ready: false, reason: "Compute a current recommendation before approval" };
   const inboxEmail: string | undefined = workspace?.inbox?.email;
   const sentThreadCount = threads.filter((thread: any) => Boolean(thread.agentmailMessageId)).length;
   const relevantSupplierIds = new Set([
@@ -78,7 +83,9 @@ export default function App() {
     verifiedCount: verifiedOfferCount,
     requiresEvidence: Boolean(activeNeed?.certRequired),
     hasPlan: Boolean(latestPlan),
-    planApproved: latestPlan?.status === "approved",
+    planApproved: recommendationState === "approved",
+    planReady: recommendationState === "ready",
+    planInfeasible: recommendationState === "infeasible",
   };
   const nextStep = nextStepForWorkspace(flowArgs);
   const derivedStep = flowStepForWorkspace(flowArgs);
@@ -95,6 +102,7 @@ export default function App() {
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [showNewIncident, setShowNewIncident] = useState(false);
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -103,9 +111,32 @@ export default function App() {
     });
   }, [ensureDemoSuppliers, isAuthenticated]);
 
+  useEffect(() => {
+    if (signingOut && !authLoading && !isAuthenticated) setSigningOut(false);
+  }, [authLoading, isAuthenticated, signingOut]);
+
   const showToast = (msg: string) => {
     setToast(msg);
-    setTimeout(() => setToast(null), 3000);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 3000);
+  };
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    setSelectedIncidentId(null);
+    setSelectedNeedId(null);
+    setIncidentSearch("");
+    setStepOverride(null);
+    setShowNewIncident(false);
+    setBusy(false);
+    setToast(null);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    try {
+      await signOut();
+    } catch (cause) {
+      setSigningOut(false);
+      showToast(userFacingError(cause, "Could not sign out"));
+    }
   };
 
   const openStep = (step: WorkspaceFlowStep) => {
@@ -135,7 +166,7 @@ export default function App() {
     setShowNewIncident(false);
     showToast(values.items.length > 1
       ? `${values.items.length} requests created — build the first shortlist`
-      : "Requirement created — find matching suppliers");
+      : "Requirement created — build the supplier shortlist");
   };
 
   const handleRecompute = async () => {
@@ -144,21 +175,23 @@ export default function App() {
     try {
       await computeAllocation({ needId: activeNeed._id });
       showToast("Recommendation recomputed");
-    } catch (e: any) {
-      showToast(e.message);
+    } catch (cause) {
+      showToast(userFacingError(cause, "Could not recompute the recommendation"));
     } finally {
       setBusy(false);
     }
   };
 
+  const canApprove = Boolean(latestPlan && approvalReadiness.ready && recommendationState === "ready" && !busy);
+
   const handleApprove = async () => {
-    if (!latestPlan) return;
+    if (!latestPlan || !canApprove) return;
     setBusy(true);
     try {
       const result = await approvePlan({ planId: latestPlan._id });
       showToast(awardDispatchMessage(result));
-    } catch (e: any) {
-      showToast(e.message);
+    } catch (cause) {
+      showToast(userFacingError(cause, "Could not approve the recommendation"));
     } finally {
       setBusy(false);
     }
@@ -173,9 +206,7 @@ export default function App() {
     </button>
   );
 
-  if (window.location.pathname === "/report") return <DecisionReport />;
-
-  if (authLoading) {
+  if (authLoading || signingOut) {
     return <div className="grid h-dvh place-items-center bg-paper text-soft">Loading…</div>;
   }
   if (!isAuthenticated) {
@@ -190,6 +221,8 @@ export default function App() {
     );
   }
 
+  if (window.location.pathname === "/report") return <DecisionReport />;
+
   if (incidentQuery === undefined) {
     return <div className="grid h-dvh place-items-center bg-paper text-soft">Loading workspace…</div>;
   }
@@ -200,7 +233,7 @@ export default function App() {
         <AppHeader
           subtitle="Evidence-backed supplier coordination"
           email={currentUser?.email}
-          onSignOut={() => void signOut()}
+          onSignOut={() => void handleSignOut()}
         >
           {newRequirementButton}
         </AppHeader>
@@ -230,7 +263,7 @@ export default function App() {
       title: "Shortlist",
       detail: threads.length
         ? `${threads.length} shortlisted${sentThreadCount ? ` · ${sentThreadCount} contacted` : " · ready for review"}`
-        : "Find matches or reuse a saved vendor",
+        : "Start with a saved vendor",
     },
     quotes: {
       title: "Quotes",
@@ -242,9 +275,13 @@ export default function App() {
       title: "Decide",
       detail: !latestPlan
         ? "Compute a recommendation from the quotes on hand"
-        : latestPlan.status === "approved"
+        : recommendationState === "approved"
           ? "Plan approved"
-          : "Review the recommendation and approve",
+          : recommendationState === "infeasible"
+            ? "No feasible recommendation — resolve quote issues"
+            : recommendationState === "stale"
+              ? "Recommendation changed — recompute before approval"
+              : "Review the recommendation and approve",
     },
   };
 
@@ -254,7 +291,7 @@ export default function App() {
         narrow
         subtitle="Supplier quote emails, compared and approved"
         email={currentUser?.email}
-        onSignOut={() => void signOut()}
+        onSignOut={() => void handleSignOut()}
       >
         {newRequirementButton}
       </AppHeader>
@@ -332,6 +369,7 @@ export default function App() {
                     inboxEmail={inboxEmail}
                     needId={activeNeed?._id}
                     suppliers={relevantSuppliers}
+                    need={activeNeed}
                   />
                 ) : (
                   <div className="text-sm text-soft">Create a requirement to collect quotes.</div>
@@ -350,7 +388,7 @@ export default function App() {
             decide: (
               <>
                 {activeIncident ? <BasketSummary incidentId={activeIncident._id} /> : null}
-                {activeNeed ? <AllocationInspector plan={latestPlan} need={activeNeed} offers={offers} /> : null}
+                {activeNeed ? <AllocationInspector plan={latestPlan} need={activeNeed} state={recommendationState} blockedReason={approvalReadiness.reason} /> : null}
                 <div className="space-y-2">
                   {!latestPlan ? (
                     <button
@@ -364,10 +402,11 @@ export default function App() {
                     <>
                       <button
                         onClick={handleApprove}
-                        disabled={latestPlan.status === "approved" || busy}
-                        className="w-full rounded-lg bg-ledger px-4 py-2.5 text-sm font-medium text-white hover:bg-ledger-deep disabled:opacity-50"
+                        disabled={!canApprove}
+                        title={canApprove ? undefined : approvalReadiness.reason}
+                        className="w-full rounded-lg bg-ledger px-4 py-2.5 text-sm font-medium text-white hover:bg-ledger-deep disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {latestPlan.status === "approved" ? "Plan approved" : "Approve plan"}
+                        {recommendationState === "approved" ? "Plan approved" : canApprove ? "Approve plan" : "Approval unavailable"}
                       </button>
                       <button
                         onClick={handleRecompute}
@@ -379,13 +418,15 @@ export default function App() {
                     </>
                   )}
                   <p className="text-[11px] leading-relaxed text-soft">
-                    Only eligible quotes are used. Review the recommendation before supplier notices go out.
+                    {canApprove
+                      ? "Full coverage is current. Review the recommendation before supplier notices go out."
+                      : approvalReadiness.reason}
                   </p>
                 </div>
                 <details className="rounded-[10px] border border-hairline bg-sheet">
                   <summary className="cursor-pointer px-4 py-3 text-xs font-semibold text-ink">Advanced</summary>
                   <div className="space-y-3 border-t border-hairline p-3">
-                    {latestPlan ? <AuditReceipt need={activeNeed} plan={latestPlan} /> : null}
+                    {latestPlan && (recommendationState === "ready" || recommendationState === "approved") ? <AuditReceipt need={activeNeed} plan={latestPlan} /> : null}
                     {activeNeed ? (
                       <div className="rounded-[10px] border border-hairline">
                         <CounterfactualLab needId={activeNeed._id} />

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { formatCents, formatDate, humanizeStatus } from "../lib/format";
+import { certificationLabel, formatCents, formatDate, humanizeStatus } from "../lib/format";
+import { userFacingError } from "../lib/errors";
 import { PasteQuote } from "./PasteQuote";
 
 function EvidenceAttach({ offerId }: { offerId: any }) {
@@ -23,7 +24,7 @@ function EvidenceAttach({ offerId }: { offerId: any }) {
       const { storageId } = await res.json();
       await record({ offerId, storageId, name: file.name });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not upload evidence");
+      setError(userFacingError(cause, "Could not upload evidence"));
     } finally {
       setBusy(false);
     }
@@ -49,7 +50,7 @@ function EvidenceAttach({ offerId }: { offerId: any }) {
                 setBusy(true);
                 setError(null);
                 void remove({ attachmentId: a._id })
-                  .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not remove evidence"))
+                  .catch((cause) => setError(userFacingError(cause, "Could not remove evidence")))
                   .finally(() => setBusy(false));
               }}
               className="text-soft hover:text-ink disabled:opacity-40"
@@ -72,12 +73,12 @@ function Badge({ children, tone }: any) {
   return <span className={`rounded-[4px] border px-2 py-0.5 text-[11px] font-semibold ${map[tone] ?? map.neutral}`}>{children}</span>;
 }
 
-export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId, suppliers }: any) {
+export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId, suppliers, need }: any) {
   const draftClarification = useAction(api.actions.clarify.draftClarification);
   const sendClarification = useAction(api.actions.clarify.approveAndSendClarification);
   const verifyOffer = useAction(api.actions.verify.verifyOffer);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
-  const [draftStatus, setDraftStatus] = useState<Record<string, string>>({});
+
   const [sent, setSent] = useState<Record<string, boolean>>({});
   const [pendingOffer, setPendingOffer] = useState<string | null>(null);
   const [clarificationError, setClarificationError] = useState<Record<string, string>>({});
@@ -96,7 +97,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
             Request inbox: <span className="font-medium text-ink">{inboxEmail}</span>
           </p>
         )}
-        <PasteQuote needId={needId} suppliers={suppliers ?? []} />
+        <PasteQuote needId={needId} suppliers={suppliers ?? []} need={need} />
       </div>
     );
   }
@@ -130,7 +131,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
                     {o.supplier?.name ?? "Unknown supplier"}
                     {o.language === "es" && <span className="rounded bg-ledger px-1.5 py-0.5 text-[11px] font-medium text-white">ES/EN</span>}
                   </div>
-                  <div className="mt-0.5 text-xs tabular-nums text-soft">{o.supplier?.contactEmail ?? ""}</div>
+                  {!o.supplier?.isDemo && o.supplier?.contactEmail ? <div className="mt-0.5 text-xs tabular-nums text-soft">{o.supplier.contactEmail}</div> : null}
                 </div>
                 <div className="text-right">
                   <div className="font-bold tabular-nums">{formatCents(o.unitPriceCents)} <span className="text-xs font-normal text-soft">× {o.qty}</span></div>
@@ -139,8 +140,16 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
               </div>
 
               <div className="mt-3 flex flex-wrap gap-1.5">
-                {isVerified ? <Badge tone="verified">{certRequired ? `${certRequired} verified` : "Evidence verified"}</Badge> : <Badge tone="review">{humanizeStatus(o.certStatus)}</Badge>}
-                {isLate ? <Badge tone="late">Late — {formatDate(o.arrivalAt)}</Badge> : <Badge tone="neutral">{formatDate(o.arrivalAt)}</Badge>}
+                {!certRequired
+                  ? <Badge tone="neutral">{certificationLabel(certRequired)}</Badge>
+                  : isVerified
+                    ? <Badge tone="verified">{certRequired} verified</Badge>
+                    : <Badge tone="review">{humanizeStatus(o.certStatus)}</Badge>}
+                {!o.arrivalAt
+                  ? <Badge tone="review">Arrival not confirmed</Badge>
+                  : isLate
+                    ? <Badge tone="late">Late — {formatDate(o.arrivalAt, need?.timezone)}</Badge>
+                    : <Badge tone="neutral">{formatDate(o.arrivalAt, need?.timezone)}</Badge>}
                 <Badge tone={o.confidence > 0.9 ? "verified" : "review"}>{(o.confidence * 100).toFixed(0)}% confidence</Badge>
                 {o.conditions?.map((c: string, i: number) => (
                   <Badge key={i} tone="review">{c}</Badge>
@@ -159,7 +168,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
 
               {ambiguous && (
                 <div className="mt-3 rounded-lg border border-[#e7d9ae] bg-[#fbf7ea] p-3">
-                  <div className="text-xs font-semibold text-[#5c4a10]">Allocator abstained</div>
+                  <div className="text-xs font-semibold text-[#5c4a10]">{o.arrivalAt ? "Quote details need confirmation" : "Delivery date needs confirmation"}</div>
                   {!drafts[o._id] ? (
                     <button
                       onClick={async () => {
@@ -168,9 +177,9 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
                         try {
                           const result = await draftClarification({ offerId: o._id });
                           setDrafts((current) => ({ ...current, [o._id]: result.question }));
-                          setDraftStatus((current) => ({ ...current, [o._id]: result.provider }));
+
                         } catch (cause) {
-                          setClarificationError((current) => ({ ...current, [o._id]: cause instanceof Error ? cause.message : "Could not draft clarification" }));
+                          setClarificationError((current) => ({ ...current, [o._id]: userFacingError(cause, "Could not draft clarification") }));
                         } finally {
                           setPendingOffer(null);
                         }
@@ -184,7 +193,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
                     <div className="mt-2">
                       <p className="text-xs text-ink">{drafts[o._id]}</p>
                       <div className="mt-2 flex items-center gap-2">
-                        <span className="text-[10px] tabular-nums text-soft">LLM: {draftStatus[o._id] === "groq" ? "Groq (GPT-OSS)" : draftStatus[o._id] === "openai" ? "OpenAI" : "live"}</span>
+                        <span className="text-[10px] text-soft">Drafted from the unresolved quote fields</span>
                         <button
                            disabled={sent[o._id] || pendingOffer === o._id}
                            onClick={async () => {
@@ -194,7 +203,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
                                await sendClarification({ offerId: o._id, question: drafts[o._id] });
                                setSent((current) => ({ ...current, [o._id]: true }));
                              } catch (cause) {
-                               setClarificationError((current) => ({ ...current, [o._id]: cause instanceof Error ? cause.message : "Could not send clarification" }));
+                               setClarificationError((current) => ({ ...current, [o._id]: userFacingError(cause, "Could not send clarification") }));
                              } finally {
                                setPendingOffer(null);
                              }
@@ -232,7 +241,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
                           const result = await verifyOffer({ offerId: o._id, type: "cert", url: verificationUrl[o._id] });
                           setVerificationMessage((current) => ({ ...current, [o._id]: result.status === "verified" ? "Certification verified" : "Source saved for review; exact authoritative evidence did not match" }));
                         } catch (cause) {
-                          setVerificationMessage((current) => ({ ...current, [o._id]: cause instanceof Error ? cause.message : "Could not verify source" }));
+                          setVerificationMessage((current) => ({ ...current, [o._id]: userFacingError(cause, "Could not verify source") }));
                         } finally {
                           setPendingOffer(null);
                         }
@@ -275,7 +284,7 @@ export function OfferMatrix({ offers, coverage, certRequired, inboxEmail, needId
         <p className="text-[11px] text-soft">Quotes update live as supplier replies are ingested.</p>
         <details open className="mt-2">
           <summary className="cursor-pointer text-xs font-semibold text-ink">Paste another quote</summary>
-          <PasteQuote needId={needId} suppliers={suppliers ?? []} />
+          <PasteQuote needId={needId} suppliers={suppliers ?? []} need={need} />
         </details>
       </div>
     </div>

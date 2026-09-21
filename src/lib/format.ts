@@ -5,13 +5,19 @@ export function formatCents(cents: number) {
   }).format(cents / 100);
 }
 
-export function formatDate(ts: number) {
+export function formatDate(ts?: number | null, timeZone?: string) {
+  if (!ts || !Number.isFinite(ts)) return "Arrival not confirmed";
   return new Date(ts).toLocaleString("en-US", {
     month: "short",
     day: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    ...(timeZone ? { timeZone } : {}),
   });
+}
+
+export function certificationLabel(certRequired?: string | null) {
+  return certRequired?.trim() || "No certification required";
 }
 
 export function formatDeadline(ts: number) {

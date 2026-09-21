@@ -1,4 +1,4 @@
-import { formatDate, formatCents, displayApprover } from "../lib/format";
+import { certificationLabel, formatDate, formatCents, displayApprover } from "../lib/format";
 
 export function AuditReceipt({ need, plan }: any) {
   if (!plan || !need) {
@@ -27,7 +27,7 @@ export function AuditReceipt({ need, plan }: any) {
         </div>
         <div className="flex justify-between gap-3">
           <span className="text-soft">Certification</span>
-          <span>{need.certRequired}</span>
+          <span>{certificationLabel(need.certRequired)}</span>
         </div>
         <div className="flex justify-between gap-3">
           <span className="text-soft">Offers received</span>
@@ -47,7 +47,7 @@ export function AuditReceipt({ need, plan }: any) {
         </div>
 
         <div className="border-t border-hairline pt-3 text-[11px] leading-relaxed text-soft">
-          Selection criteria: deadline ≤ {new Date(need.deadlineAt).toLocaleTimeString()}, cert = {need.certRequired || "not required"}, confidence ≥ 0.75, minimal total cost. Supplier notices require explicit human approval.
+          Selection criteria: delivery by {formatDate(need.deadlineAt, need.timezone)}, certification = {certificationLabel(need.certRequired)}, confidence ≥ 0.75, minimal total cost. Supplier notices require explicit human approval.
         </div>
 
         <div className="flex gap-2">

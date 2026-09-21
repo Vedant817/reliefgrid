@@ -1,6 +1,6 @@
 import { useQuery } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { formatCents, formatDate, humanizeStatus, displayApprover } from "../lib/format";
+import { certificationLabel, formatCents, formatDate, humanizeStatus, displayApprover } from "../lib/format";
 
 // Exportable one-page decision report: what was requested, who quoted what,
 // why the winner won, who approved, and the evidence behind it. Opens from
@@ -50,8 +50,8 @@ export function DecisionReport() {
           <h2 className="eyebrow">What was requested</h2>
           <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
             <div className="border-b border-hairline pb-2"><dt className="text-soft">Budget</dt><dd className="mt-0.5 font-semibold tabular-nums">{formatCents(need.budgetCents)}</dd></div>
-            <div className="border-b border-hairline pb-2"><dt className="text-soft">Required by</dt><dd className="mt-0.5 font-semibold">{formatDate(need.deadlineAt)}</dd></div>
-            <div className="border-b border-hairline pb-2"><dt className="text-soft">Certification</dt><dd className="mt-0.5 font-semibold">{need.certRequired ?? "—"}</dd></div>
+            <div className="border-b border-hairline pb-2"><dt className="text-soft">Required by</dt><dd className="mt-0.5 font-semibold">{formatDate(need.deadlineAt, need.timezone)}</dd></div>
+            <div className="border-b border-hairline pb-2"><dt className="text-soft">Certification</dt><dd className="mt-0.5 font-semibold">{certificationLabel(need.certRequired)}</dd></div>
             <div className="border-b border-hairline pb-2"><dt className="text-soft">Delivery</dt><dd className="mt-0.5 font-semibold">{need.deliveryLocation ?? "—"}</dd></div>
           </dl>
         </section>
@@ -76,8 +76,8 @@ export function DecisionReport() {
                   <td className="py-2.5 pr-3 text-right tabular-nums">{o.qty}</td>
                   <td className="py-2.5 pr-3 text-right tabular-nums">{formatCents(o.unitPriceCents)}</td>
                   <td className="py-2.5 pr-3 text-right tabular-nums">{formatCents(o.qty * o.unitPriceCents)}</td>
-                  <td className="py-2.5 pr-3 text-xs">{formatDate(o.arrivalAt)}</td>
-                  <td className="py-2.5 text-xs text-soft">{humanizeStatus(o.certStatus)}</td>
+                  <td className="py-2.5 pr-3 text-xs">{formatDate(o.arrivalAt, need.timezone)}</td>
+                  <td className="py-2.5 text-xs text-soft">{need.certRequired ? humanizeStatus(o.certStatus) : certificationLabel()}</td>
                 </tr>
               ))}
             </tbody>
