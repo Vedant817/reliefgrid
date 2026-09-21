@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
 import { requireIncidentOwner, requireOwnerKeys } from "./model/auth";
+import { isValidTimeZone } from "./lib/timezone";
 
 export const createIncident = mutation({
   args: {
@@ -68,7 +69,7 @@ export const createRequirement = mutation({
     if (args.deadlineAt <= now) throw new Error("deadlineAt must be in the future");
     if (args.items.length < 1 || args.items.length > 10) throw new Error("A requirement must have between 1 and 10 line items");
     if (!args.deliveryLocation.trim() || args.deliveryLocation.length > 300) throw new Error("Enter a delivery location of at most 300 characters");
-    if (args.timezone.length > 100) throw new Error("timezone must be at most 100 characters");
+    if (args.timezone.length > 100 || !isValidTimeZone(args.timezone)) throw new Error("Select a valid delivery timezone");
     if ((args.certification?.length ?? 0) > 120) throw new Error("certification must be at most 120 characters");
     if ((args.evidenceKey?.length ?? 0) > 120) throw new Error("evidenceKey must be at most 120 characters");
     for (const item of args.items) {
@@ -106,7 +107,7 @@ export const createRequirement = mutation({
         budgetCents: item.budgetCents,
         certRequired: args.certification,
         evidenceKey: args.evidenceKey,
-        partialAllowed: true,
+        partialAllowed: false,
         unit: "units",
         deliveryLocation: args.deliveryLocation.trim(),
         timezone: args.timezone,

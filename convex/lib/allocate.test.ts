@@ -29,6 +29,13 @@ describe("allocateOffers abstention", () => {
     expect(result.selected).toHaveLength(1);
   });
 
+  it("rejects an unknown delivery date with a concrete clarification reason", () => {
+    const result = allocateOffers([offer({ arrivalAt: undefined })], need);
+    expect(result.totalQty).toBe(0);
+    expect(result.rejected[0].reason).toBe("Delivery date needs confirmation");
+  });
+
+
   it("does not require certification evidence when the need has no certification constraint", () => {
     const noCertificationNeed = { ...need, certRequired: undefined };
     const result = allocateOffers([

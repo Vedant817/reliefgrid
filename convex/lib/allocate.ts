@@ -4,7 +4,7 @@ export type AllocInput = {
   supplierName: string;
   qty: number;
   unitPriceCents: number;
-  arrivalAt: number;
+  arrivalAt?: number;
   certStatus: string;
   confidence: number;
   fieldEvidence?: Record<"qty" | "price" | "arrival" | "cert", { confidence: number }>;
@@ -32,13 +32,21 @@ export function allocateOffers(
   const eligible: AllocInput[] = [];
 
   for (const o of offers) {
-    const uncertainFields = o.fieldEvidence
-      ? Object.entries(o.fieldEvidence).filter(([, evidence]) => evidence.confidence < MIN_EVIDENCE_CONFIDENCE).map(([field]) => field)
-      : [];
+    if (!o.arrivalAt || !Number.isFinite(o.arrivalAt)) {
+      rejected.push({ ...o, reason: "Delivery date needs confirmation" });
+      continue;
+    }
+    const requiredEvidence = need.certRequired
+      ? Object.entries(o.fieldEvidence ?? {})
+      : Object.entries(o.fieldEvidence ?? {}).filter(([field]) => field !== "cert");
+    const uncertainFields = requiredEvidence
+      .filter(([, evidence]) => evidence.confidence < MIN_EVIDENCE_CONFIDENCE)
+      .map(([field]) => field);
     if (uncertainFields.length > 0) {
       rejected.push({ ...o, reason: `Needs review: low-confidence ${uncertainFields.join(", ")}` });
       continue;
     }
+
     if (o.arrivalAt > need.deadlineAt) {
       rejected.push({ ...o, reason: `Late: arrives ${new Date(o.arrivalAt).toLocaleString()} after deadline ${new Date(need.deadlineAt).toLocaleString()}` });
       continue;
@@ -63,7 +71,7 @@ export function allocateOffers(
   }
 
   // Sort by unit price then arrival
-  eligible.sort((a, b) => a.unitPriceCents - b.unitPriceCents || a.arrivalAt - b.arrivalAt);
+  eligible.sort((a, b) => a.unitPriceCents - b.unitPriceCents || (a.arrivalAt ?? 0) - (b.arrivalAt ?? 0));
 
   // Greedy cheapest feasible covering
   let totalQty = 0;

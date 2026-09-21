@@ -5,14 +5,14 @@ import { v } from "convex/values";
 import { internal } from "../_generated/api";
 import {
   buildExtractionPrompt,
-  chatJsonWithFallback,
+  chatExtractedOfferWithFallback,
   LlmProviderError,
-  parseExtractionJson,
   type ExtractedOffer,
 } from "../lib/llm";
 import { MIN_EVIDENCE_CONFIDENCE } from "../lib/allocate";
 import { recordRun } from "../lib/runs";
 import { checkLimit } from "../rateLimits";
+import { parseSupplierArrival } from "../lib/timezone";
 
 function evidenceSpan(match: RegExpMatchArray | null, confidence: number) {
   const start = match?.index ?? 0;
@@ -34,7 +34,7 @@ function certMatchFrom(text: string, certRequired?: string) {
 
 // Live LLM extraction: OpenAI first, Groq (GPT-OSS) if OpenAI is missing or
 // fails. Missing keys and provider failures throw after recording failed runs.
-// Ambiguous emails yield qty 0 / needs_review so the allocator abstains.
+// Ambiguous emails remain explicitly incomplete so the allocator can request clarification.
 export const extractOfferFromEmail = internalAction({
   args: {
     needId: v.id("needs"),
@@ -46,7 +46,7 @@ export const extractOfferFromEmail = internalAction({
   returns: v.object({
     qty: v.number(),
     unitPriceCents: v.number(),
-    arrivalAt: v.number(),
+    arrivalAt: v.optional(v.number()),
     certStatus: v.string(),
     language: v.string(),
     confidence: v.number(),
@@ -68,12 +68,12 @@ export const extractOfferFromEmail = internalAction({
     let providerKind: "openai" | "groq" = "openai";
     let providerModel = "";
     try {
-      const reply = await chatJsonWithFallback(
-        buildExtractionPrompt(args.rawBody, new Date(args.receivedAt ?? Date.now()).toISOString()),
+      const receivedAt = args.receivedAt ?? Date.now();
+      if (!Number.isFinite(receivedAt)) throw new Error("Invalid supplier email receipt time");
+      const reply = await chatExtractedOfferWithFallback(
+        buildExtractionPrompt(args.rawBody, new Date(receivedAt).toISOString(), context.timezone),
       );
-      const result = parseExtractionJson(reply.content);
-      if (!result) throw new Error("unparseable model output");
-      parsed = result;
+      parsed = reply.offer;
       requestId = reply.requestId;
       providerKind = reply.provider;
       providerModel = reply.model;
@@ -119,7 +119,7 @@ export const extractOfferFromEmail = internalAction({
 
     const qty = parsed.qty ?? 0;
     const unitPriceCents = parsed.unitPriceCents ?? 0;
-    const arrivalAt = parsed.arrivalAtIso ? Date.parse(parsed.arrivalAtIso) : 0;
+    const arrivalAt = parseSupplierArrival(parsed.arrivalAtIso, context.timezone);
     // Supplier claims are never authoritative verification. A source check
     // must promote the offer before the allocator may use it.
     let certStatus: string = parsed.certStatus === "unverified" ? "unverified" : "needs_review";
@@ -130,13 +130,13 @@ export const extractOfferFromEmail = internalAction({
     // Deterministic spans always come from the source text.
     const qtyMatch = text.match(/(\d[\d,]*)\s*(?:filters?|units?|unidades|pcs?|pieces?|boxes?|kits?|items?|each)?/i);
     const priceMatch = text.match(/\$(\d+(?:\.\d+)?)/);
-    const arrivalMatch = text.match(/tomorrow(?: morning)?(?:\s+\d+\s*(?:am|pm))?|\d{4}-\d{2}-\d{2}[^\s,;]*|\d+\s*(?:a\.?m\.?|p\.?m\.?)/i);
+    const arrivalMatch = text.match(/(?:guaranteed\s+)?(?:by|on|before|deliver(?:y|ed)?\s+(?:by|on)?)?\s*(?:tomorrow(?:\s+(?:morning|afternoon|evening))?|(?:next\s+)?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|(?:january|february|march|april|may|june|july|august|september|october|november|december)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?|\d{1,2}\s+(?:january|february|march|april|may|june|july|august|september|october|november|december)(?:\s+\d{4})?|\d{4}-\d{2}-\d{2})(?:\s+(?:at\s+)?\d{1,2}(?::\d{2})?\s*(?:a\.?m\.?|p\.?m\.?))?/i);
     const certMatch = certMatchFrom(text, context.certRequired);
     const certRequired = Boolean(context.certRequired?.trim());
     const fieldEvidence = {
       qty: evidenceSpan(qtyMatch, parsed.fieldConfidences.qty),
       price: evidenceSpan(priceMatch, parsed.fieldConfidences.price),
-      arrival: evidenceSpan(arrivalAt > 0 ? arrivalMatch : null, parsed.fieldConfidences.arrival),
+      arrival: evidenceSpan(arrivalAt !== undefined ? arrivalMatch : null, parsed.fieldConfidences.arrival),
       cert: certRequired
         ? evidenceSpan(certMatch, parsed.fieldConfidences.cert)
         : { confidence: 1, start: 0, end: 0, quote: "" },
@@ -154,7 +154,7 @@ export const extractOfferFromEmail = internalAction({
       supplierId: args.supplierId,
       qty,
       unitPriceCents,
-      arrivalAt,
+      ...(arrivalAt === undefined ? {} : { arrivalAt }),
       certStatus,
       conditions,
       confidence,
@@ -181,7 +181,7 @@ export const extractOfferFromEmail = internalAction({
       ownerId: context.ownerId,
     });
 
-    return { qty, unitPriceCents, arrivalAt, certStatus, language, confidence, conditions, providerStatus: "live" as const, provider: providerKind };
+    return { qty, unitPriceCents, ...(arrivalAt === undefined ? {} : { arrivalAt }), certStatus, language, confidence, conditions, providerStatus: "live" as const, provider: providerKind };
   },
 });
 
@@ -196,7 +196,7 @@ export const ingestPastedQuote = action({
   returns: v.object({
     qty: v.number(),
     unitPriceCents: v.number(),
-    arrivalAt: v.number(),
+    arrivalAt: v.optional(v.number()),
     certStatus: v.string(),
     language: v.string(),
     confidence: v.number(),
@@ -207,7 +207,7 @@ export const ingestPastedQuote = action({
   handler: async (ctx, args): Promise<{
     qty: number;
     unitPriceCents: number;
-    arrivalAt: number;
+    arrivalAt?: number;
     certStatus: string;
     language: string;
     confidence: number;
@@ -224,7 +224,7 @@ export const ingestPastedQuote = action({
     const extracted: {
       qty: number;
       unitPriceCents: number;
-      arrivalAt: number;
+      arrivalAt?: number;
       certStatus: string;
       language: string;
       confidence: number;

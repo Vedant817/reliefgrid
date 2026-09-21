@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internalQuery, mutation, query } from "./_generated/server";
 import { writeAudit } from "./lib/audit";
 import { requireIncidentOwner, requireNeedOwner } from "./model/auth";
+import { isValidTimeZone } from "./lib/timezone";
 
 export const createNeed = mutation({
   args: {
@@ -28,7 +29,9 @@ export const createNeed = mutation({
     if ((args.certRequired?.length ?? 0) > 120) throw new Error("certRequired must be at most 120 characters");
     if ((args.evidenceKey?.length ?? 0) > 120) throw new Error("evidenceKey must be at most 120 characters");
     if ((args.deliveryLocation?.length ?? 0) > 300) throw new Error("deliveryLocation must be at most 300 characters");
-    if ((args.timezone?.length ?? 0) > 100) throw new Error("timezone must be at most 100 characters");
+    if ((args.timezone?.length ?? 0) > 100 || (args.timezone !== undefined && !isValidTimeZone(args.timezone))) {
+      throw new Error("Select a valid delivery timezone");
+    }
     if (!Number.isInteger(args.qty) || args.qty < 1) throw new Error("qty must be an integer >= 1");
     if (args.budgetCents < 0) throw new Error("budgetCents must be >= 0");
     if (args.deadlineAt <= Date.now()) throw new Error("deadlineAt must be in the future");

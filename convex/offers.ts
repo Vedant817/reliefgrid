@@ -14,6 +14,7 @@ export const getExtractionContext = internalQuery({
     ownerId: v.string(),
     item: v.string(),
     certRequired: v.optional(v.string()),
+    timezone: v.string(),
   }),
   handler: async (ctx, args) => {
     const need = await ctx.db.get(args.needId);
@@ -21,7 +22,7 @@ export const getExtractionContext = internalQuery({
     if (!need || !supplier) throw new Error("Extraction context not found");
     const incident = await ctx.db.get(need.incidentId);
     if (!incident?.ownerId || !supplierBelongsTo(supplier, incident.ownerId)) throw new Error("Supplier does not belong to the incident owner");
-    return { ownerId: incident.ownerId, item: need.item, certRequired: need.certRequired };
+    return { ownerId: incident.ownerId, item: need.item, certRequired: need.certRequired, timezone: need.timezone ?? "UTC" };
   },
 });
 
@@ -31,7 +32,7 @@ export const upsertOfferVersion = internalMutation({
     supplierId: v.id("suppliers"),
     qty: v.number(),
     unitPriceCents: v.number(),
-    arrivalAt: v.number(),
+    arrivalAt: v.optional(v.number()),
     certStatus: v.string(),
     conditions: v.array(v.string()),
     confidence: v.number(),
@@ -43,6 +44,9 @@ export const upsertOfferVersion = internalMutation({
   handler: async (ctx, args) => {
     if (args.qty < 0) throw new Error("qty must be >= 0");
     if (args.unitPriceCents < 0) throw new Error("unitPriceCents must be >= 0");
+    if (args.arrivalAt !== undefined && (!Number.isFinite(args.arrivalAt) || args.arrivalAt <= 0)) {
+      throw new Error("arrivalAt must be a valid timestamp when provided");
+    }
     if (!args.rawEmailId.trim()) throw new Error("rawEmailId must not be empty");
     const need = await ctx.db.get(args.needId);
     if (!need) throw new Error("Need not found");
@@ -83,7 +87,7 @@ export const upsertOfferVersion = internalMutation({
       supplierId: args.supplierId,
       qty: args.qty,
       unitPriceCents: args.unitPriceCents,
-      arrivalAt: args.arrivalAt,
+      ...(args.arrivalAt === undefined ? {} : { arrivalAt: args.arrivalAt }),
       certStatus,
       conditions: args.conditions,
       confidence: args.confidence,
@@ -130,7 +134,7 @@ export const upsertOfferVersion = internalMutation({
         supplierId: args.supplierId,
         qty: args.qty,
         unitPriceCents: args.unitPriceCents,
-        arrivalAt: args.arrivalAt,
+        ...(args.arrivalAt === undefined ? {} : { arrivalAt: args.arrivalAt }),
         certStatus,
         conditions: args.conditions,
         confidence: args.confidence,

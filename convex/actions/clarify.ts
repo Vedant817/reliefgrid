@@ -17,7 +17,7 @@ type OfferForClarification = {
   supplierId: string;
   qty: number;
   unitPriceCents: number;
-  arrivalAt: number;
+  arrivalAt?: number;
   certStatus: string;
   confidence: number;
   fieldEvidence?: Record<string, { confidence: number }>;
@@ -27,10 +27,10 @@ function unresolvedFields(offer: OfferForClarification) {
   const unresolved = new Set<string>();
   if (offer.qty <= 0) unresolved.add("quantity");
   if (offer.unitPriceCents <= 0) unresolved.add("unit price");
-  if (offer.arrivalAt <= Date.now()) unresolved.add("arrival date and time");
+  if (!offer.arrivalAt || offer.arrivalAt <= Date.now()) unresolved.add("delivery date");
   if (offer.certStatus !== "verified") unresolved.add("certification status");
   for (const [field, evidence] of Object.entries(offer.fieldEvidence ?? {})) {
-    if (evidence.confidence < MIN_EVIDENCE_CONFIDENCE) unresolved.add(field === "price" ? "unit price" : field === "arrival" ? "arrival date and time" : field === "cert" ? "certification status" : "quantity");
+    if (evidence.confidence < MIN_EVIDENCE_CONFIDENCE) unresolved.add(field === "price" ? "unit price" : field === "arrival" ? "delivery date" : field === "cert" ? "certification status" : "quantity");
   }
   if (offer.confidence < MIN_EVIDENCE_CONFIDENCE && unresolved.size === 0) unresolved.add("offer terms");
   return [...unresolved];

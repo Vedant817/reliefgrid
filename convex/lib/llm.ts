@@ -80,7 +80,11 @@ export async function withLlmFallback<T>(args: {
   throw new LlmProviderError(failures);
 }
 
-export function buildExtractionPrompt(rawBody: string, referenceTimeIso = new Date().toISOString()): { system: string; user: string } {
+export function buildExtractionPrompt(
+  rawBody: string,
+  referenceTimeIso = new Date().toISOString(),
+  timeZone = "UTC",
+): { system: string; user: string } {
   const system = [
     "You extract structured supplier-offer fields from a procurement email.",
     "Reply with JSON only, no markdown, matching this schema:",
@@ -88,7 +92,9 @@ export function buildExtractionPrompt(rawBody: string, referenceTimeIso = new Da
     ' "certStatus": "verified"|"unverified"|"needs_review", "language": "en"|"es", "conditions": string[], "confidence": 0..1,',
     ' "fieldConfidences": {"qty": 0..1, "price": 0..1, "arrival": 0..1, "cert": 0..1}}',
     "Use null for any value the email does not state clearly. Never guess quantities or prices.",
-    `Resolve relative delivery phrases against email receipt time ${referenceTimeIso}. Return an ISO-8601 timestamp with an explicit offset; return null when timezone or time is ambiguous.`,
+    `Resolve relative delivery phrases against email receipt time ${referenceTimeIso} in the requirement timezone ${timeZone}.`,
+    "When the supplier states a calendar date but no time, return YYYY-MM-DD; the application treats it as end-of-day in the requirement timezone.",
+    "When a time is stated, return an ISO-8601 timestamp with an explicit offset. Return null only when no usable delivery date is stated.",
     "certStatus is verified only when the email names a specific certification, standard, or registry. A generic claim that goods are certified is needs_review.",
   ].join(" ");
   return { system, user: rawBody };
@@ -103,33 +109,92 @@ function clamp01(n: unknown, fallback = 0): number {
 export function parseExtractionJson(text: string): ExtractedOffer | null {
   try {
     const cleaned = text.replace(/```json|```/g, "").trim();
-    const raw = JSON.parse(cleaned.slice(cleaned.indexOf("{")));
-    const arrivalAtIso = typeof raw.arrivalAtIso === "string" && Number.isFinite(Date.parse(raw.arrivalAtIso)) ? raw.arrivalAtIso : null;
-    const certStatus =
-      raw.certStatus === "verified" || raw.certStatus === "unverified" ? raw.certStatus : "needs_review";
-    const language = raw.language === "es" ? "es" : "en";
+    const parsed: unknown = JSON.parse(cleaned.slice(cleaned.indexOf("{")));
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const raw = parsed as Record<string, unknown>;
+    const fc = raw.fieldConfidences;
+    const validNullableNumber = (value: unknown) => value === null || (typeof value === "number" && Number.isFinite(value));
+    const validNullableString = (value: unknown) => value === null || typeof value === "string";
+    if (
+      !validNullableNumber(raw.qty)
+      || !validNullableNumber(raw.unitPriceCents)
+      || !validNullableString(raw.arrivalAtIso)
+      || !["verified", "unverified", "needs_review"].includes(String(raw.certStatus))
+      || !["en", "es"].includes(String(raw.language))
+      || !Array.isArray(raw.conditions)
+      || raw.conditions.some((condition) => typeof condition !== "string")
+      || typeof raw.confidence !== "number"
+      || !Number.isFinite(raw.confidence)
+      || !fc
+      || typeof fc !== "object"
+      || Array.isArray(fc)
+      || ["qty", "price", "arrival", "cert"].some((field) => {
+        const value = (fc as Record<string, unknown>)[field];
+        return typeof value !== "number" || !Number.isFinite(value);
+      })
+    ) return null;
+    const arrivalValue = typeof raw.arrivalAtIso === "string" ? raw.arrivalAtIso.trim() : "";
+    const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(arrivalValue);
+    const hasExplicitOffset = /T.*(?:Z|[+-]\d{2}:\d{2})$/i.test(arrivalValue);
+    const arrivalAtIso = (isDateOnly || hasExplicitOffset) && Number.isFinite(Date.parse(arrivalValue))
+      ? arrivalValue
+      : null;
+    const certStatus = raw.certStatus as ExtractedOffer["certStatus"];
+    const language = raw.language as ExtractedOffer["language"];
     const qty = typeof raw.qty === "number" && raw.qty > 0 ? Math.floor(raw.qty) : null;
     const unitPriceCents =
       typeof raw.unitPriceCents === "number" && raw.unitPriceCents > 0 ? Math.round(raw.unitPriceCents) : null;
-    const fc = raw.fieldConfidences ?? {};
+    const fieldConfidences = fc as Record<string, number>;
     return {
       qty,
       unitPriceCents,
       arrivalAtIso,
       certStatus,
       language,
-      conditions: Array.isArray(raw.conditions) ? raw.conditions.filter((c: unknown) => typeof c === "string") : [],
+      conditions: raw.conditions as string[],
       confidence: clamp01(raw.confidence),
       fieldConfidences: {
-        qty: clamp01(fc.qty),
-        price: clamp01(fc.price),
-        arrival: clamp01(fc.arrival),
-        cert: clamp01(fc.cert),
+        qty: clamp01(fieldConfidences.qty),
+        price: clamp01(fieldConfidences.price),
+        arrival: clamp01(fieldConfidences.arrival),
+        cert: clamp01(fieldConfidences.cert),
       },
     };
   } catch {
     return null;
   }
+}
+
+export async function withExtractionFallback(args: {
+  providers: LlmConfig[];
+  run: (config: LlmConfig) => Promise<{ requestId: string; content: string; latencyMs: number }>;
+}) {
+  return await withLlmFallback({
+    providers: args.providers,
+    run: async (config) => {
+      const response = await args.run(config);
+      const offer = parseExtractionJson(response.content);
+      if (!offer) throw new Error("unparseable model output");
+      return { ...response, offer };
+    },
+  });
+}
+
+export async function chatExtractedOfferWithFallback(
+  prompt: { system: string; user: string },
+  timeoutMs = 20000,
+  env: Record<string, string | undefined> = process.env,
+) {
+  const result = await withExtractionFallback({
+    providers: listLlmProviders(env),
+    run: (config) => chatJson(config, prompt, timeoutMs, true),
+  });
+  return {
+    ...result.value,
+    provider: result.provider.kind,
+    model: result.provider.model,
+    failures: result.failures,
+  };
 }
 
 export async function chatJsonWithFallback(

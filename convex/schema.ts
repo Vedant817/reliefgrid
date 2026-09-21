@@ -65,10 +65,15 @@ export default defineSchema({
     ownerId: v.optional(v.string()),
     isDemo: v.optional(v.boolean()),
     demoKey: v.optional(v.string()),
+    sourceUrl: v.optional(v.string()),
+    sourceDomain: v.optional(v.string()),
+    contactType: v.optional(v.string()),
+    contactConfirmedAt: v.optional(v.number()),
   })
     .index("by_email", ["contactEmail"])
     .index("by_owner", ["ownerId"])
     .index("by_owner_and_email", ["ownerId", "contactEmail"])
+    .index("by_owner_and_demo_key", ["ownerId", "demoKey"])
     .searchIndex("search_name", { searchField: "name", filterFields: ["ownerId"] }),
 
   // Supplier evidence attachments (cert PDFs, spec photos). Files live in
@@ -106,7 +111,7 @@ export default defineSchema({
     supplierId: v.id("suppliers"),
     qty: v.number(),
     unitPriceCents: v.number(),
-    arrivalAt: v.number(),
+    arrivalAt: v.optional(v.number()),
     certStatus: v.string(), // verified, unverified, needs_review
     conditions: v.array(v.string()),
     confidence: v.number(),
@@ -130,7 +135,7 @@ export default defineSchema({
     supplierId: v.id("suppliers"),
     qty: v.number(),
     unitPriceCents: v.number(),
-    arrivalAt: v.number(),
+    arrivalAt: v.optional(v.number()),
     certStatus: v.string(),
     conditions: v.array(v.string()),
     confidence: v.number(),

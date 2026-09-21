@@ -4,6 +4,7 @@ import {
   listLlmProviders,
   parseExtractionJson,
   resolveLlmProvider,
+  withExtractionFallback,
   withLlmFallback,
 } from "./llm";
 
@@ -25,6 +26,22 @@ describe("resolveLlmProvider", () => {
   it("lists OpenAI then Groq for live fallback", () => {
     expect(listLlmProviders({ OPENAI_API_KEY: "sk-test", GROQ_API_KEY: "gsk-test" }).map((item) => item.kind))
       .toEqual(["openai", "groq"]);
+  });
+
+  it("falls back to Groq when OpenAI returns malformed extraction JSON", async () => {
+    const result = await withExtractionFallback({
+      providers: listLlmProviders({ OPENAI_API_KEY: "sk-test", GROQ_API_KEY: "gsk-test" }),
+      run: async (config) => ({
+        requestId: config.kind,
+        latencyMs: 1,
+        content: config.kind === "openai"
+          ? "not json"
+          : '{"qty":70,"unitPriceCents":1100,"arrivalAtIso":"2026-09-24","certStatus":"unverified","language":"en","conditions":[],"confidence":0.9,"fieldConfidences":{"qty":0.9,"price":0.9,"arrival":0.9,"cert":1}}',
+      }),
+    });
+    expect(result.provider.kind).toBe("groq");
+    expect(result.value.offer.arrivalAtIso).toBe("2026-09-24");
+    expect(result.failures).toEqual([{ provider: "openai", error: "unparseable model output" }]);
   });
 
   it("reports an unconfigured provider with no keys", () => {
@@ -54,17 +71,25 @@ describe("parseExtractionJson", () => {
     expect(parsed?.arrivalAtIso).toBe("2026-09-05T16:00:00-04:00");
   });
 
-  it("nulls out guessed or invalid fields instead of hallucinating", () => {
+  it("accepts ordinary date-only delivery promises", () => {
     const parsed = parseExtractionJson(
-      '{"qty": -3, "unitPriceCents": 0, "arrivalAtIso": "NEXT_WEEK", "certStatus": "maybe", "language": "fr", "conditions": "none", "confidence": 99, "fieldConfidences": {}}',
+      '{"qty":100,"unitPriceCents":900,"arrivalAtIso":"2026-09-24","certStatus":"unverified","language":"en","conditions":[],"confidence":0.95,"fieldConfidences":{"qty":0.95,"price":0.95,"arrival":0.95,"cert":1}}',
     );
-    expect(parsed?.qty).toBeNull();
-    expect(parsed?.unitPriceCents).toBeNull();
+    expect(parsed?.arrivalAtIso).toBe("2026-09-24");
+  });
+
+  it("rejects ambiguous offset-free date-times", () => {
+    const parsed = parseExtractionJson(
+      '{"qty":100,"unitPriceCents":900,"arrivalAtIso":"2026-09-24T16:00:00","certStatus":"unverified","language":"en","conditions":[],"confidence":0.95,"fieldConfidences":{"qty":0.95,"price":0.95,"arrival":0.95,"cert":1}}',
+    );
     expect(parsed?.arrivalAtIso).toBeNull();
-    expect(parsed?.certStatus).toBe("needs_review");
-    expect(parsed?.language).toBe("en");
-    expect(parsed?.conditions).toEqual([]);
-    expect(parsed?.confidence).toBe(1);
+  });
+
+  it("rejects schema-invalid provider output instead of suppressing fallback", () => {
+    expect(parseExtractionJson(
+      '{"qty": -3, "unitPriceCents": 0, "arrivalAtIso": "NEXT_WEEK", "certStatus": "maybe", "language": "fr", "conditions": "none", "confidence": 99, "fieldConfidences": {}}',
+    )).toBeNull();
+    expect(parseExtractionJson("{}")).toBeNull();
   });
 
   it("returns null for unparseable output so callers reject it", () => {
@@ -72,8 +97,10 @@ describe("parseExtractionJson", () => {
   });
 
   it("builds a prompt that forbids guessing", () => {
-    const prompt = buildExtractionPrompt("We can deliver 70 filters.");
+    const prompt = buildExtractionPrompt("We can deliver 70 filters.", "2026-09-20T12:00:00.000Z", "Asia/Kolkata");
     expect(prompt.system).toContain("Never guess");
+    expect(prompt.system).toContain("end-of-day");
+    expect(prompt.system).toContain("Asia/Kolkata");
     expect(prompt.user).toContain("70 filters");
   });
 });
